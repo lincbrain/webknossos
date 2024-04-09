@@ -1,0 +1,28 @@
+build:
+  docker:
+    web: Dockerfile
+    db: postgres/Dockerfile
+    redis: redis/Dockerfile
+    fossildb: fossildb/Dockerfile
+
+services:
+  web:
+    image: scalableminds/webknossos:master
+    ports:
+      - 9000:9000
+  db:
+    image: postgres:10-alpine
+    environment:
+      POSTGRES_USER: youruser
+      POSTGRES_PASSWORD: yourpassword
+    ports:
+      - 5434:5432
+  redis:
+    image: redis:5.0
+    ports:
+      - 6379
+  fossildb:
+    image: scalableminds/fossildb:master__484
+    ports:
+      - 7155
+
