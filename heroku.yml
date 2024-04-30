@@ -1,30 +1,9 @@
-setup:
-  addons:
-    - plan: heroku-redis
-      as: REDIS
-    - plan: heroku-postgresql
-      as: DATABASE
-
 build:
   docker:
-    web: scalableminds/webknossos:master
-    fossildb: scalableminds/fossildb:master__484
+    web: Dockerfile
 
 release:
   image: web
 
 run:
-  web: >
-    /docker-entrypoint.sh
-    -Dconfig.file=conf/application.conf
-    -Djava.net.preferIPv4Stack=true
-    -Dtracingstore.fossildb.address=fossildb
-    -Dtracingstore.redis.address=$REDIS_URL
-    -Ddatastore.redis.address=$REDIS_URL
-    -Dslick.db.url=$DATABASE_URL
-    -DwebKnossos.sampleOrganization.enabled=false
-  fossildb: >
-    fossildb -c
-    skeletons,skeletonUpdates,volumes,volumeData,volumeUpdates,volumeSegmentIndex,
-    editableMappings,editableMappingUpdates,editableMappingsInfo,
-    editableMappingsAgglomerateToGraph,editableMappingsSegmentToAgglomerate
+  web: /docker-entrypoint.sh
