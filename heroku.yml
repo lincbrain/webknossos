@@ -5,7 +5,13 @@ setup:
     - plan: heroku-postgresql
       as: DATABASE
 
+build:
+  docker:
+    web: Dockerfile
+
 release:
-  image: scalableminds/webknossos:master
-  command:
-    - "/docker-entrypoint.sh -Dconfig.file=conf/application.conf -Djava.net.preferIPv4Stack=true -Dtracingstore.fossildb.address=fossildb -Dtr"
+  image: web
+
+run:
+  web:
+    # No command needed if the ENTRYPOINT script handles everything
