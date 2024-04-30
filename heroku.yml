@@ -5,9 +5,6 @@ setup:
     - plan: heroku-postgresql
       as: DATABASE
 
-build:
-  # This section can be removed if no building is needed
-
 release:
   image: scalableminds/webknossos:master
   command:
