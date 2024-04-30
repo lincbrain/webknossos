@@ -11,7 +11,3 @@ build:
 
 release:
   image: web
-
-run:
-  web:
-    # No command needed if the ENTRYPOINT script handles everything
