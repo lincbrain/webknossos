@@ -5,12 +5,7 @@ setup:
     - plan: heroku-postgresql
       as: DATABASE
 
-build:
-  docker:
-    web: scalableminds/webknossos:master
-
 release:
-  image: web
-
-run:
-  web: /docker-entrypoint.sh -Dconfig.file=conf/application.conf -Djava.net.preferIPv4Stack=true -Dtracingstore.fossildb.address=fossildb -Dtracingstore.redis.address=redis -Ddatastore.redis.address=redis -Dslick.db.url=jdbc:postgresql://postgres/webknossos
+  image: scalableminds/webknossos:master
+  command:
+    - "/docker-entrypoint.sh -Dconfig.file=conf/application.conf -Djava.net.preferIPv4Stack=true -Dtracingstore.fossildb.address=fossildb -Dtr
