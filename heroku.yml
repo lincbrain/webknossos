@@ -1,9 +1,16 @@
+setup:
+  addons:
+    - plan: heroku-redis
+      as: REDIS
+    - plan: heroku-postgresql
+      as: DATABASE
+
 build:
   docker:
-    web: Dockerfile
+    web: scalableminds/webknossos:master
 
 release:
   image: web
 
 run:
-  web: /docker-entrypoint.sh
+  web: /docker-entrypoint.sh -Dconfig.file=conf/application.conf -Djava.net.preferIPv4Stack=true -Dtracingstore.fossildb.address=fossildb -Dtracingstore.redis.address=redis -Ddatastore.redis.address=redis -Dslick.db.url=jdbc:postgresql://postgres/webknossos
