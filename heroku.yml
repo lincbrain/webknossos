@@ -8,15 +8,23 @@ setup:
 build:
   docker:
     web: scalableminds/webknossos:master
-    postgres: postgres:10-alpine
-    redis: redis:5.0
     fossildb: scalableminds/fossildb:master__484
 
 release:
   image: web
 
 run:
-  web: /docker-entrypoint.sh -Dconfig.file=conf/application.conf -Djava.net.preferIPv4Stack=true -Dtracingstore.fossildb.address=fossildb -Dtracingstore.redis.address=redis -Ddatastore.redis.address=redis -Dslick.db.url=jdbc:postgresql://postgres/webknossos
-  redis: redis-server
-  postgres: docker-entrypoint.sh postgres
-  fossildb: fossildb -c skeletons,skeletonUpdates,volumes,volumeData,volumeUpdates,volumeSegmentIndex,editableMappings,editableMappingUpdates,editableMappingsInfo,editableMappingsAgglomerateToGraph,editableMappingsSegmentToAgglomerate
+  web: >
+    /docker-entrypoint.sh
+    -Dconfig.file=conf/application.conf
+    -Djava.net.preferIPv4Stack=true
+    -Dtracingstore.fossildb.address=fossildb
+    -Dtracingstore.redis.address=$REDIS_URL
+    -Ddatastore.redis.address=$REDIS_URL
+    -Dslick.db.url=$DATABASE_URL
+    -DwebKnossos.sampleOrganization.enabled=false
+  fossildb: >
+    fossildb -c
+    skeletons,skeletonUpdates,volumes,volumeData,volumeUpdates,volumeSegmentIndex,
+    editableMappings,editableMappingUpdates,editableMappingsInfo,
+    editableMappingsAgglomerateToGraph,editableMappingsSegmentToAgglomerate
