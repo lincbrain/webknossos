@@ -30,3 +30,4 @@ USER webknossos
 EXPOSE 9000
 
 ENTRYPOINT [ "/docker-entrypoint.sh" ]
+
