@@ -11,7 +11,7 @@ const creditsFooter = () => (
         <p>
           Developed by <a href="https://scalableminds.com">scalable minds</a> and{" "}
           <a href="https://www.brain.mpg.de/connectomics">
-            Max Planck Institute for Brain Research.
+            Max Planck Institute for Brain Research. Hello again
           </a>
         </p>
         <p>

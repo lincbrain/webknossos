@@ -31,7 +31,7 @@ function LoginView({ history, redirect }: Props) {
     <Row justify="center" align="middle" className="login-view">
       <Col>
         <Card className="login-content">
-          <h3>Login</h3>
+          <h3>Login!!!</h3>
           <LoginForm layout="horizontal" onLoggedIn={onLoggedIn} />
         </Card>
       </Col>

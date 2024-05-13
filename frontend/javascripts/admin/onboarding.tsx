@@ -434,7 +434,7 @@ class OnboardingView extends React.PureComponent<Props, State> {
   };
   renderCreateOrganization = () => (
     <StepHeader
-      header="Create or Join an Organization"
+      header="Create or Join an Organization!!!!"
       subheader={
         <React.Fragment>
           Welcome to WEBKNOSSOS! This guide will help you get started.
