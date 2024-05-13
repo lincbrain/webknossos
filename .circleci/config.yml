@@ -128,15 +128,15 @@ jobs:
             retry sh -c 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
             if [ -n "$CIRCLE_BRANCH" ]; then
               docker tag \
-                scalableminds/webknossos:${DOCKER_TAG} \
+                scalableminds/webknossos:latest \
                 akanzer/webknossos:${NORMALIZED_BRANCH}
               retry docker push scalableminds/webknossos:${NORMALIZED_BRANCH}
               docker tag \
-                scalableminds/webknossos-datastore:${DOCKER_TAG} \
+                scalableminds/webknossos-datastore:latest \
                 akanzer/webknossos-datastore:${NORMALIZED_BRANCH}
               retry docker push scalableminds/webknossos-datastore:${NORMALIZED_BRANCH}
               docker tag \
-                scalableminds/webknossos-tracingstore:${DOCKER_TAG} \
+                scalableminds/webknossos-tracingstore:latest \
                 akanzer/webknossos-tracingstore:${NORMALIZED_BRANCH}
               retry docker push scalableminds/webknossos-tracingstore:${NORMALIZED_BRANCH}
               docker tag \
