@@ -76,7 +76,7 @@ jobs:
       - run:
           name: Build webknossos (sbt)
           command: |
-            if [ "${CIRCLE_BRANCH}" == "master" ]; then
+            if [ "${CIRCLE_BRANCH}" == "ak-circle" ]; then
               docker-compose run compile sbt -no-colors clean compile stage
             else
               docker-compose run compile sbt -no-colors -DfailOnWarning compile stage
@@ -223,19 +223,19 @@ jobs:
             if [ -n "$CIRCLE_BRANCH" ]; then
               docker tag \
                 scalableminds/webknossos:${DOCKER_TAG} \
-                scalableminds/webknossos:${NORMALIZED_BRANCH}
+                akanzer/webknossos:${NORMALIZED_BRANCH}
               retry docker push scalableminds/webknossos:${NORMALIZED_BRANCH}
               docker tag \
                 scalableminds/webknossos-datastore:${DOCKER_TAG} \
-                scalableminds/webknossos-datastore:${NORMALIZED_BRANCH}
+                akanzer/webknossos-datastore:${NORMALIZED_BRANCH}
               retry docker push scalableminds/webknossos-datastore:${NORMALIZED_BRANCH}
               docker tag \
                 scalableminds/webknossos-tracingstore:${DOCKER_TAG} \
-                scalableminds/webknossos-tracingstore:${NORMALIZED_BRANCH}
+                akanzer/webknossos-tracingstore:${NORMALIZED_BRANCH}
               retry docker push scalableminds/webknossos-tracingstore:${NORMALIZED_BRANCH}
               docker tag \
                 scalableminds/webknossos-dev \
-                scalableminds/webknossos-dev:${NORMALIZED_BRANCH}
+                akanzer/webknossos-dev:${NORMALIZED_BRANCH}
               retry docker push scalableminds/webknossos-dev:${NORMALIZED_BRANCH}
             fi
             docker logout
