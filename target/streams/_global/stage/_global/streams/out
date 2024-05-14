@@ -1,0 +1,47 @@
+[info] yarn install v1.22.19
+[info] [1/5] Validating package.json...
+[info] [2/5] Resolving packages...
+[error] warning Resolution field "redux@3.7.2" is incompatible with requested version "redux@^4.0.4"
+[error] warning Resolution field "redux@3.7.2" is incompatible with requested version "redux@^4.0.4"
+[error] warning Resolution field "redux@3.7.2" is incompatible with requested version "redux@^4.0.0"
+[info] [3/5] Fetching packages...
+[error] warning @zip.js/zip.js@2.7.32: The engine "deno" appears to be invalid.
+[error] warning @zip.js/zip.js@2.7.32: The engine "bun" appears to be invalid.
+[info] [4/5] Linking dependencies...
+[error] warning "@tanstack/query-sync-storage-persister > @tanstack/query-persist-client-core@4.14.1" has unmet peer dependency "@tanstack/query-core@4.14.1".
+[error] warning " > @tanstack/react-query-persist-client@4.14.1" has incorrect peer dependency "@tanstack/react-query@4.14.1".
+[error] warning " > beautiful-react-hooks@3.11.1" has unmet peer dependency "rxjs@>=7.0.0".
+[error] warning " > flexlayout-react@0.5.5" has incorrect peer dependency "react@^17.0.1".
+[error] warning " > flexlayout-react@0.5.5" has incorrect peer dependency "react-dom@^17.0.1".
+[error] warning " > react-debounce-render@8.0.2" has incorrect peer dependency "react@^17.0.2".
+[error] warning " > react-sortable-hoc@2.0.0" has unmet peer dependency "prop-types@^15.5.7".
+[error] warning " > react-sortable-tree@2.8.0" has incorrect peer dependency "react-dnd@^7.3.0".
+[error] warning "react-sortable-tree > frontend-collective-react-dnd-scrollzone@1.0.2" has incorrect peer dependency "react-dnd@^7.3.0".
+[info] [5/5] Building fresh packages...
+[info] $ cd tools/proxy && yarn install
+[info] yarn install v1.22.19
+[error] warning package.json: No license field
+[error] warning proxy@1.0.0: No license field
+[info] [1/4] Resolving packages...
+[info] [2/4] Fetching packages...
+[info] [3/4] Linking dependencies...
+[info] [4/4] Building fresh packages...
+[info] Done in 3.59s.
+[info] Done in 195.81s.
+[info] yarn init v1.22.19
+[error] warning The yes flag has been set. This will automatically answer yes to all questions, which may have security implications.
+[info] success Saved package.json
+[info] Done in 0.09s.
+[info] yarn add v1.22.19
+[info] info No lockfile found.
+[info] [1/4] Resolving packages...
+[info] [2/4] Fetching packages...
+[info] [3/4] Linking dependencies...
+[info] [4/4] Building fresh packages...
+[info] success Saved lockfile.
+[info] success Saved 1 new dependency.
+[info] info Direct dependencies
+[info] └─ commander@10.0.0
+[info] info All dependencies
+[info] └─ commander@10.0.0
+[info] Done in 0.37s.
