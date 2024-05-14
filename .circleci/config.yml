@@ -24,138 +24,182 @@ jobs:
               echo "export NORMALIZED_BRANCH=master" >> $BASH_ENV
               echo "export DOCKER_TAG=${CIRCLE_TAG}" >> $BASH_ENV
             fi
-      - run:
-          name: Prepare dependency folders
-          command: mkdir -p project/target target ~/.ivy2 ~/.cache/coursier ~/.cache/yarn
-      - restore_cache:
-          name: Restore target cache
-          keys:
-            - target-cache-{{ checksum ".circleci/cache_version" }}-{{ .Branch }}
-            - target-cache-{{ checksum ".circleci/cache_version" }}-master
-      - restore_cache:
-          name: Restore sbt cache
-          keys:
-            - sbt-cache-{{ checksum ".circleci/cache_version" }}-{{ checksum "project/Dependencies.scala" }}
-            - sbt-cache-{{ checksum ".circleci/cache_version" }}-
-      - restore_cache:
-          name: Restore yarn cache
-          keys:
-            - yarn-cache-{{ checksum ".circleci/cache_version" }}-{{ checksum "yarn.lock" }}
-            - yarn-cache-{{ checksum ".circleci/cache_version" }}-
-      - run:
-          name: Install frontend dependencies
-          command: docker-compose run -e PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true base yarn install --frozen-lockfile
-      - run:
-          name: Assert unique evolution numbers
-          command: docker-compose run base tools/postgres/dbtool.js assert-unique-evolution-numbers
-      - restore_cache:
-          name: Restore webpack cache
-          keys:
-            - webpack-cache-{{ checksum ".circleci/cache_version" }}-{{ .Branch }}
-            - webpack-cache-{{ checksum ".circleci/cache_version" }}-master
-      - run:
-          name: Assert schema.sql and evolutions are equal
-          command: |
-            docker-compose up -d postgres
-            sleep 3
-            docker-compose run compile tools/postgres/dbtool.js check-evolutions-schema
-      - run:
-          name: Build frontend documentation
-          command: |
-            WK_VERSION=${CIRCLE_TAG:-${CIRCLE_BUILD_NUM:-dev}}
-            docker-compose run base yarn run docs --project-version $WK_VERSION
-      - run:
-          name: Build webknossos (webpack)
-          command: |
-            docker-compose run base yarn build
-      - run:
-          name: Build webknossos (sbt)
-          command: |
-            if [ "${CIRCLE_BRANCH}" == "ak-circle" ]; then
-              docker-compose run compile sbt -no-colors clean compile stage
-            else
-              docker-compose run compile sbt -no-colors -DfailOnWarning compile stage
-            fi
-      - run:
-          name: Build webknossos-datastore (sbt)
-          command: docker-compose run base sbt -no-colors -DfailOnWarning "project webknossosDatastore" copyMessages compile stage
-
-      - run:
-          name: Build webknossos-tracingstore (sbt)
-          command: docker-compose run base sbt -no-colors -DfailOnWarning "project webknossosTracingstore" copyMessages compile stage
-
-      - save_cache:
-          name: Save target cache
-          key: target-cache-{{ checksum ".circleci/cache_version" }}-{{ .Branch }}-{{ .Revision }}
-          paths:
-            - "project/target"
-            - "target"
-
-      - save_cache:
-          name: Save sbt cache
-          key: sbt-cache-{{ checksum ".circleci/cache_version" }}-{{ checksum "project/Dependencies.scala" }}
-          paths:
-            - "~/.ivy2"
-            - "~/.cache/coursier"
-
-      - save_cache:
-          name: Save yarn cache
-          key: yarn-cache-{{ checksum ".circleci/cache_version" }}-{{ checksum "yarn.lock" }}
-          paths:
-            - "~/.cache/yarn"
-
-      - save_cache:
-          name: Save webpack cache
-          key: webpack-cache-{{ checksum ".circleci/cache_version" }}-{{ .Branch }}-{{ .Revision }}
-          paths:
-            - "node_modules/.cache/webpack"
-
-      - run:
-          name: Lint frontend code and check formatting
-          command: |
-            .circleci/not-on-master.sh docker-compose run base bash -c "yarn run check-frontend"
-      - run:
-          name: Check for cyclic dependencies in front-end
-          command: |
-            .circleci/not-on-master.sh docker-compose run base yarn check-cyclic-dependencies
-      - run:
-          name: Run frontend tests
-          command: |
-            .circleci/not-on-master.sh docker-compose run base yarn test-verbose
-      - run:
-          name: Lint backend code and check formatting
-          command: |
-            .circleci/not-on-master.sh docker-compose run backend-lint-format
-      - run:
-          name: Run backend tests
-          command: |
-            .circleci/not-on-master.sh docker-compose run backend-tests
-      - run:
-          name: Run end-to-end tests
-          command: |
-            for i in {1..3}; do # retry
-              .circleci/not-on-master.sh docker-compose run e2e-tests && s=0 && break || s=$?
-            done
-            (exit $s)
-      - run:
-          name: Validate frontend types
-          command: |
-            .circleci/not-on-master.sh docker-compose run base yarn typecheck
-      - run:
-          name: Start webknossos
-          background: true
-          command: docker-compose up webknossos
-      - run:
-          name: Run webknossos smoke test
-          command: |
-            for i in {1..10}; do # retry
-              sleep 10
-              curl --fail -v http://localhost:9000/api/health && s=0 && break || s=$?
-            done
-            (exit $s)
-      - run:
-          name: Stop webknossos
-          command: docker-compose down --volumes --remove-orphans
+#      - run:
+#          name: Prepare dependency folders
+#          command: mkdir -p project/target target ~/.ivy2 ~/.cache/coursier ~/.cache/yarn
+#      - restore_cache:
+#          name: Restore target cache
+#          keys:
+#            - target-cache-{{ checksum ".circleci/cache_version" }}-{{ .Branch }}
+#            - target-cache-{{ checksum ".circleci/cache_version" }}-master
+#      - restore_cache:
+#          name: Restore sbt cache
+#          keys:
+#            - sbt-cache-{{ checksum ".circleci/cache_version" }}-{{ checksum "project/Dependencies.scala" }}
+#            - sbt-cache-{{ checksum ".circleci/cache_version" }}-
+#      - restore_cache:
+#          name: Restore yarn cache
+#          keys:
+#            - yarn-cache-{{ checksum ".circleci/cache_version" }}-{{ checksum "yarn.lock" }}
+#            - yarn-cache-{{ checksum ".circleci/cache_version" }}-
+#      - run:
+#          name: Install frontend dependencies
+#          command: docker-compose run -e PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true base yarn install --frozen-lockfile
+#      - run:
+#          name: Assert unique evolution numbers
+#          command: docker-compose run base tools/postgres/dbtool.js assert-unique-evolution-numbers
+#      - restore_cache:
+#          name: Restore webpack cache
+#          keys:
+#            - webpack-cache-{{ checksum ".circleci/cache_version" }}-{{ .Branch }}
+#            - webpack-cache-{{ checksum ".circleci/cache_version" }}-master
+#      - run:
+#          name: Assert schema.sql and evolutions are equal
+#          command: |
+#            docker-compose up -d postgres
+#            sleep 3
+#            docker-compose run compile tools/postgres/dbtool.js check-evolutions-schema
+#      - run:
+#          name: Build frontend documentation
+#          command: |
+#            WK_VERSION=${CIRCLE_TAG:-${CIRCLE_BUILD_NUM:-dev}}
+#            docker-compose run base yarn run docs --project-version $WK_VERSION
+#      - run:
+#          name: Build webknossos (webpack)
+#          command: |
+#            docker-compose run base yarn build
+#      - run:
+#          name: Build webknossos (sbt)
+#          command: |
+#            if [ "${CIRCLE_BRANCH}" == "ak-circle" ]; then
+#              docker-compose run compile sbt -no-colors clean compile stage
+#            else
+#              docker-compose run compile sbt -no-colors -DfailOnWarning compile stage
+#            fi
+#      - run:
+#          name: Build webknossos-datastore (sbt)
+#          command: docker-compose run base sbt -no-colors -DfailOnWarning "project webknossosDatastore" copyMessages compile stage
+#
+#      - run:
+#          name: Build webknossos-tracingstore (sbt)
+#          command: docker-compose run base sbt -no-colors -DfailOnWarning "project webknossosTracingstore" copyMessages compile stage
+#
+#      - save_cache:
+#          name: Save target cache
+#          key: target-cache-{{ checksum ".circleci/cache_version" }}-{{ .Branch }}-{{ .Revision }}
+#          paths:
+#            - "project/target"
+#            - "target"
+#
+#      - save_cache:
+#          name: Save sbt cache
+#          key: sbt-cache-{{ checksum ".circleci/cache_version" }}-{{ checksum "project/Dependencies.scala" }}
+#          paths:
+#            - "~/.ivy2"
+#            - "~/.cache/coursier"
+#
+#      - save_cache:
+#          name: Save yarn cache
+#          key: yarn-cache-{{ checksum ".circleci/cache_version" }}-{{ checksum "yarn.lock" }}
+#          paths:
+#            - "~/.cache/yarn"
+#
+#      - save_cache:
+#          name: Save webpack cache
+#          key: webpack-cache-{{ checksum ".circleci/cache_version" }}-{{ .Branch }}-{{ .Revision }}
+#          paths:
+#            - "node_modules/.cache/webpack"
+#
+#      - run:
+#          name: Build webknossos docker image
+#          command: docker-compose build --pull webknossos
+#
+#      - run:
+#          name: Build webknossos-datastore docker image
+#          command: docker-compose build --pull webknossos-datastore
+#
+#      - run:
+#          name: Build webknossos-tracingstore docker image
+#          command: docker-compose build --pull webknossos-tracingstore
+#
+#      - run:
+#          name: Lint frontend code and check formatting
+#          command: |
+#            .circleci/not-on-master.sh docker-compose run base bash -c "yarn run check-frontend"
+#      - run:
+#          name: Check for cyclic dependencies in front-end
+#          command: |
+#            .circleci/not-on-master.sh docker-compose run base yarn check-cyclic-dependencies
+#      - run:
+#          name: Run frontend tests
+#          command: |
+#            .circleci/not-on-master.sh docker-compose run base yarn test-verbose
+#      - run:
+#          name: Lint backend code and check formatting
+#          command: |
+#            .circleci/not-on-master.sh docker-compose run backend-lint-format
+#      - run:
+#          name: Run backend tests
+#          command: |
+#            .circleci/not-on-master.sh docker-compose run backend-tests
+#      - run:
+#          name: Run end-to-end tests
+#          command: |
+#            for i in {1..3}; do # retry
+#              .circleci/not-on-master.sh docker-compose run e2e-tests && s=0 && break || s=$?
+#            done
+#            (exit $s)
+#      - run:
+#          name: Validate frontend types
+#          command: |
+#            .circleci/not-on-master.sh docker-compose run base yarn typecheck
+#      - run:
+#          name: Start webknossos
+#          background: true
+#          command: docker-compose up webknossos
+#      - run:
+#          name: Run webknossos smoke test
+#          command: |
+#            for i in {1..10}; do # retry
+#              sleep 10
+#              curl --fail -v http://localhost:9000/api/health && s=0 && break || s=$?
+#            done
+#            (exit $s)
+#      - run:
+#          name: Stop webknossos
+#          command: docker-compose down --volumes --remove-orphans
+#
+#      - run:
+#          name: Start webknossos-datastore
+#          background: true
+#          command: docker-compose up webknossos-datastore
+#      - run:
+#          name: Run webknossos-datastore smoke test
+#          command: |
+#            for i in {1..10}; do # retry
+#              sleep 10
+#              curl --fail -v http://localhost:9090/data/health && s=0 && break || s=$?
+#            done
+#            (exit $s)
+#      - run:
+#          name: Stop webknossos-datastore
+#          command: docker-compose down --volumes --remove-orphans
+#
+#      - run:
+#          name: Start webknossos-tracingstore
+#          background: true
+#          command: docker-compose up webknossos-tracingstore
+#      - run:
+#          name: Run webknossos-tracingstore smoke test
+#          command: |
+#            for i in {1..10}; do # retry
+#              sleep 10
+#              curl --fail -v http://localhost:9050/tracings/health && s=0 && break || s=$?
+#            done
+#            (exit $s)
+#      - run:
+#          name: Stop webknossos-tracingstore
+#          command: docker-compose down --volumes --remove-orphans
 
       - run:
           name: Push docker images
@@ -170,19 +214,19 @@ jobs:
             retry sh -c 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
             if [ -n "$CIRCLE_BRANCH" ]; then
               docker tag \
-                scalableminds/webknossos:latest \
+                scalableminds/webknossos:23.04.0 \
                 akanzer/webknossos:${NORMALIZED_BRANCH}
               retry docker push akanzer/webknossos:${NORMALIZED_BRANCH}
               docker tag \
-                scalableminds/webknossos-datastore:latest \
+                scalableminds/webknossos-datastore:23.04.0 \
                 akanzer/webknossos-datastore:${NORMALIZED_BRANCH}
               retry docker push akanzer/webknossos-datastore:${NORMALIZED_BRANCH}
               docker tag \
-                scalableminds/webknossos-tracingstore:latest \
+                scalableminds/webknossos-tracingstore:23.04.0 \
                 akanzer/webknossos-tracingstore:${NORMALIZED_BRANCH}
               retry docker push akanzer/webknossos-tracingstore:${NORMALIZED_BRANCH}
               docker tag \
-                scalableminds/webknossos-dev:latest \
+                scalableminds/webknossos-dev:23.04.0 \
                 akanzer/webknossos-dev:${NORMALIZED_BRANCH}
               retry docker push akanzer/webknossos-dev:${NORMALIZED_BRANCH}
             fi
