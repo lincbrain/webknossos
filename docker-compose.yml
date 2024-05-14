@@ -4,7 +4,7 @@ services:
   # Production
   webknossos:
     build: .
-    image: scalableminds/webknossos:${DOCKER_TAG:-master}
+    image: akanzer/webknossos:${NORMALIZED_BRANCH:-master}
     ports:
       - "9000:9000"
     links:
@@ -42,7 +42,7 @@ services:
 
   webknossos-datastore:
     build: webknossos-datastore
-    image: scalableminds/webknossos-datastore:${DOCKER_TAG:-master}
+    image: akanzer/webknossos-datastore:${NORMALIZED_BRANCH:-master}
     ports:
       - "9090:9090"
     volumes:
@@ -61,7 +61,7 @@ services:
 
   webknossos-tracingstore:
     build: webknossos-tracingstore
-    image: scalableminds/webknossos-tracingstore:${DOCKER_TAG:-master}
+    image: akanzer/webknossos-tracingstore:${NORMALIZED_BRANCH:-master}
     ports:
       - "9050:9050"
     command:
@@ -83,7 +83,7 @@ services:
 
   # Development
   base:
-    image: scalableminds/webknossos-dev
+    image: akanzer/webknossos-dev
     build:
       context: .
       dockerfile: Dockerfile.dev
