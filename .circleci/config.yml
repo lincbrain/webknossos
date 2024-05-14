@@ -116,6 +116,97 @@ jobs:
             - "node_modules/.cache/webpack"
 
       - run:
+          name: Build webknossos docker image
+          command: docker-compose build --pull webknossos
+
+      - run:
+          name: Build webknossos-datastore docker image
+          command: docker-compose build --pull webknossos-datastore
+
+      - run:
+          name: Build webknossos-tracingstore docker image
+          command: docker-compose build --pull webknossos-tracingstore
+
+      - run:
+          name: Lint frontend code and check formatting
+          command: |
+            .circleci/not-on-master.sh docker-compose run base bash -c "yarn run check-frontend"
+      - run:
+          name: Check for cyclic dependencies in front-end
+          command: |
+            .circleci/not-on-master.sh docker-compose run base yarn check-cyclic-dependencies
+      - run:
+          name: Run frontend tests
+          command: |
+            .circleci/not-on-master.sh docker-compose run base yarn test-verbose
+      - run:
+          name: Lint backend code and check formatting
+          command: |
+            .circleci/not-on-master.sh docker-compose run backend-lint-format
+      - run:
+          name: Run backend tests
+          command: |
+            .circleci/not-on-master.sh docker-compose run backend-tests
+      - run:
+          name: Run end-to-end tests
+          command: |
+            for i in {1..3}; do # retry
+              .circleci/not-on-master.sh docker-compose run e2e-tests && s=0 && break || s=$?
+            done
+            (exit $s)
+      - run:
+          name: Validate frontend types
+          command: |
+            .circleci/not-on-master.sh docker-compose run base yarn typecheck
+      - run:
+          name: Start webknossos
+          background: true
+          command: docker-compose up webknossos
+      - run:
+          name: Run webknossos smoke test
+          command: |
+            for i in {1..10}; do # retry
+              sleep 10
+              curl --fail -v http://localhost:9000/api/health && s=0 && break || s=$?
+            done
+            (exit $s)
+      - run:
+          name: Stop webknossos
+          command: docker-compose down --volumes --remove-orphans
+
+      - run:
+          name: Start webknossos-datastore
+          background: true
+          command: docker-compose up webknossos-datastore
+      - run:
+          name: Run webknossos-datastore smoke test
+          command: |
+            for i in {1..10}; do # retry
+              sleep 10
+              curl --fail -v http://localhost:9090/data/health && s=0 && break || s=$?
+            done
+            (exit $s)
+      - run:
+          name: Stop webknossos-datastore
+          command: docker-compose down --volumes --remove-orphans
+
+      - run:
+          name: Start webknossos-tracingstore
+          background: true
+          command: docker-compose up webknossos-tracingstore
+      - run:
+          name: Run webknossos-tracingstore smoke test
+          command: |
+            for i in {1..10}; do # retry
+              sleep 10
+              curl --fail -v http://localhost:9050/tracings/health && s=0 && break || s=$?
+            done
+            (exit $s)
+      - run:
+          name: Stop webknossos-tracingstore
+          command: docker-compose down --volumes --remove-orphans
+
+      - run:
           name: Push docker images
           command: |
             function retry() {
@@ -126,23 +217,26 @@ jobs:
               return $s
             }
             retry sh -c 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+            retry docker-compose push webknossos
+            retry docker-compose push webknossos-datastore
+            retry docker-compose push webknossos-tracingstore
             if [ -n "$CIRCLE_BRANCH" ]; then
               docker tag \
-                scalableminds/webknossos:latest \
+                scalableminds/webknossos:${DOCKER_TAG} \
                 akanzer/webknossos:${NORMALIZED_BRANCH}
               retry docker push scalableminds/webknossos:${NORMALIZED_BRANCH}
               docker tag \
-                scalableminds/webknossos-datastore:latest \
+                scalableminds/webknossos-datastore:${DOCKER_TAG} \
                 akanzer/webknossos-datastore:${NORMALIZED_BRANCH}
               retry docker push scalableminds/webknossos-datastore:${NORMALIZED_BRANCH}
               docker tag \
-                scalableminds/webknossos-tracingstore:latest \
+                scalableminds/webknossos-tracingstore:${DOCKER_TAG} \
                 akanzer/webknossos-tracingstore:${NORMALIZED_BRANCH}
               retry docker push scalableminds/webknossos-tracingstore:${NORMALIZED_BRANCH}
               docker tag \
                 scalableminds/webknossos-dev \
                 akanzer/webknossos-dev:${NORMALIZED_BRANCH}
-              retry docker push scalableminds/webknossos-dev:${NORMALIZED_BRANCH}
+              retry docker push akanzer/webknossos-dev:${NORMALIZED_BRANCH}
             fi
             docker logout
       - run:
