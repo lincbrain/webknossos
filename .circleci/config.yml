@@ -226,13 +226,13 @@ jobs:
             retry docker-compose push webknossos-datastore
             retry docker-compose push webknossos-tracingstore
             if [ -n "$CIRCLE_BRANCH" ]; then
-              retry docker push akanzer/webknossos:${NORMALIZED_BRANCH}
-              retry docker push akanzer/webknossos-datastore:${NORMALIZED_BRANCH}
-              retry docker push akanzer/webknossos-tracingstore:${NORMALIZED_BRANCH}
+              retry docker push lincbrain/webknossos:${NORMALIZED_BRANCH}
+              retry docker push lincbrain/webknossos-datastore:${NORMALIZED_BRANCH}
+              retry docker push lincbrain/webknossos-tracingstore:${NORMALIZED_BRANCH}
               docker tag \
-                akanzer/webknossos-dev \
-                akanzer/webknossos-dev:${NORMALIZED_BRANCH}
-              retry docker push akanzer/webknossos-dev:${NORMALIZED_BRANCH}
+                lincbrain/webknossos-dev \
+                lincbrain/webknossos-dev:${NORMALIZED_BRANCH}
+              retry docker push lincbrain/webknossos-dev:${NORMALIZED_BRANCH}
             fi
             docker logout
       - run:
