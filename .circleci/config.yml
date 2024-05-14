@@ -213,18 +213,22 @@ jobs:
             }
             retry sh -c 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
             if [ -n "$CIRCLE_BRANCH" ]; then
+              retry docker pull scalableminds/webknossos:23.04.0
               docker tag \
                 scalableminds/webknossos:23.04.0 \
                 akanzer/webknossos:${NORMALIZED_BRANCH}
               retry docker push akanzer/webknossos:${NORMALIZED_BRANCH}
+              retry docker pull scalableminds/webknossos-datastore:23.04.0
               docker tag \
                 scalableminds/webknossos-datastore:23.04.0 \
                 akanzer/webknossos-datastore:${NORMALIZED_BRANCH}
               retry docker push akanzer/webknossos-datastore:${NORMALIZED_BRANCH}
+              retry docker pull scalableminds/webknossos-tracingstore:23.04.0
               docker tag \
                 scalableminds/webknossos-tracingstore:23.04.0 \
                 akanzer/webknossos-tracingstore:${NORMALIZED_BRANCH}
               retry docker push akanzer/webknossos-tracingstore:${NORMALIZED_BRANCH}
+              retry docker pull scalableminds/webknossos-dev:23.04.0
               docker tag \
                 scalableminds/webknossos-dev:23.04.0 \
                 akanzer/webknossos-dev:${NORMALIZED_BRANCH}
