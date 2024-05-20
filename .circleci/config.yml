@@ -76,7 +76,7 @@ jobs:
       - run:
           name: Build webknossos (sbt)
           command: |
-            if [ "${CIRCLE_BRANCH}" == "master" ]; then
+            if [ "${CIRCLE_BRANCH}" == "ak-annotation" ]; then
               docker-compose run compile sbt -no-colors clean compile stage
             else
               docker-compose run compile sbt -no-colors -DfailOnWarning compile stage
@@ -114,6 +114,10 @@ jobs:
           key: webpack-cache-{{ checksum ".circleci/cache_version" }}-{{ .Branch }}-{{ .Revision }}
           paths:
             - "node_modules/.cache/webpack"
+
+      - run:
+          name: List target/universal/stage contents
+          command: ls -al target/universal/stage
 
       - run:
           name: Build webknossos docker image
@@ -206,6 +210,7 @@ jobs:
           name: Stop webknossos-tracingstore
           command: docker-compose down --volumes --remove-orphans
 
+
       - run:
           name: Push docker images
           command: |
@@ -221,22 +226,13 @@ jobs:
             retry docker-compose push webknossos-datastore
             retry docker-compose push webknossos-tracingstore
             if [ -n "$CIRCLE_BRANCH" ]; then
+              retry docker push lincbrain/webknossos:${NORMALIZED_BRANCH}
+              retry docker push lincbrain/webknossos-datastore:${NORMALIZED_BRANCH}
+              retry docker push lincbrain/webknossos-tracingstore:${NORMALIZED_BRANCH}
               docker tag \
-                scalableminds/webknossos:${DOCKER_TAG} \
-                scalableminds/webknossos:${NORMALIZED_BRANCH}
-              retry docker push scalableminds/webknossos:${NORMALIZED_BRANCH}
-              docker tag \
-                scalableminds/webknossos-datastore:${DOCKER_TAG} \
-                scalableminds/webknossos-datastore:${NORMALIZED_BRANCH}
-              retry docker push scalableminds/webknossos-datastore:${NORMALIZED_BRANCH}
-              docker tag \
-                scalableminds/webknossos-tracingstore:${DOCKER_TAG} \
-                scalableminds/webknossos-tracingstore:${NORMALIZED_BRANCH}
-              retry docker push scalableminds/webknossos-tracingstore:${NORMALIZED_BRANCH}
-              docker tag \
-                scalableminds/webknossos-dev \
-                scalableminds/webknossos-dev:${NORMALIZED_BRANCH}
-              retry docker push scalableminds/webknossos-dev:${NORMALIZED_BRANCH}
+                lincbrain/webknossos-dev \
+                lincbrain/webknossos-dev:${NORMALIZED_BRANCH}
+              retry docker push lincbrain/webknossos-dev:${NORMALIZED_BRANCH}
             fi
             docker logout
       - run:
