@@ -422,7 +422,7 @@ export default function WorkflowView() {
 
   return (
     <div className="container voxelytics-view">
-      <TabTitle title={`${collapsedReport.workflow.name} | WEBKNOSSOS`} />
+      <TabTitle title={`${collapsedReport.workflow.name} | LINC | WEBKNOSSOS`} />
       <TaskListView
         report={collapsedReport}
         tasksWithHierarchy={tasksWithHierarchy}
