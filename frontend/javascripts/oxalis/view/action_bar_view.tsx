@@ -231,7 +231,7 @@ class ActionBarView extends React.PureComponent<Props, State> {
         type="primary"
         onClick={() => this.createAnnotation(this.props.dataset)}
       >
-        Create Annotation
+        Create Annotation A
       </ButtonWithAuthentication>
     );
   }
