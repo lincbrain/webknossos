@@ -4,7 +4,7 @@ services:
   # Production
   webknossos:
     build: .
-    image: lincbrain/webknossos:${NORMALIZED_BRANCH:-master}
+    image: lincbrain/webknossos:ak-annotation
     ports:
       - "9000:9000"
     links:
