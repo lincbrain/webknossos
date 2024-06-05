@@ -75,7 +75,7 @@ export const WhatsNextHeader = ({ activeUser, onDismiss }: WhatsNextHeaderProps)
         <div className="text-and-button-container">
           <h1>Welcome to LINC | WEBKNOSSOS</h1>
           <p className="subtitle">
-            Welcome to the WEBKNOSSOS open-source version for <a href={"https://connects.mgh.harvard.edu/"} target={"_blank"}>LINC</a>.
+            Welcome to the WEBKNOSSOS open-source version for <a href={"https://connects.mgh.harvard.edu/"} target={"_blank"} rel={"noreferrer"}>LINC</a>.
             Congratulations on your new WEBKNOSSOS account! To hit the ground running, we recommend
             the following steps to you:
           </p>
