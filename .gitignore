@@ -19,7 +19,7 @@ RUNNING_PID
 .target/
 logs/
 .history
-target/
+#target/
 binarydata/
 userBinaryData/
 binaryData

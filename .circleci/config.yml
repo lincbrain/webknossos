@@ -124,10 +124,6 @@ jobs:
           command: pwd && cd bin/ && ls && pwd
 
       - run:
-          name: Re-run
-          command: sbt compile
-
-      - run:
           name: Build webknossos docker image
           command: docker-compose build --pull webknossos
 
