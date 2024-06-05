@@ -4,7 +4,7 @@ services:
   # Production
   webknossos:
     build: .
-    image: scalableminds/webknossos:${DOCKER_TAG:-master}
+    image: lincbrain/webknossos:${DOCKER_TAG:-master}
     ports:
       - "9000:9000"
     links:
@@ -42,7 +42,7 @@ services:
 
   webknossos-datastore:
     build: webknossos-datastore
-    image: scalableminds/webknossos-datastore:${DOCKER_TAG:-master}
+    image: lincbrain/webknossos-datastore:${DOCKER_TAG:-master}
     ports:
       - "9090:9090"
     volumes:
@@ -61,7 +61,7 @@ services:
 
   webknossos-tracingstore:
     build: webknossos-tracingstore
-    image: scalableminds/webknossos-tracingstore:${DOCKER_TAG:-master}
+    image: lincbrain/webknossos-tracingstore:${DOCKER_TAG:-master}
     ports:
       - "9050:9050"
     command:
@@ -83,13 +83,13 @@ services:
 
   # Development
   base:
-    image: scalableminds/webknossos-dev
+    image: lincbrain/webknossos-dev
     build:
       context: .
       dockerfile: Dockerfile.dev
       cache_from:
-        - scalableminds/webknossos-dev
-        - scalableminds/webknossos-dev:${DEV_CACHE:-master}
+        - lincbrain/webknossos-dev
+        - lincbrain/webknossos-dev:${DEV_CACHE:-master}
     environment:
       - USER_NAME=${USER_NAME:-sbt-user}
       - USER_UID
