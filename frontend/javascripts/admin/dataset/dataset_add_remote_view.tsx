@@ -219,7 +219,6 @@ function DatasetAddRemoteView(props: Props) {
         if (nameValidationResult) {
           throw new Error(nameValidationResult);
         }
-        console.log(123)
         await storeRemoteDataset(
           datastoreToUse.url,
           configJSON.id.name,
