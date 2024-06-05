@@ -1,0 +1,32 @@
+[info] yarn install v1.22.22
+[info] [1/5] Validating package.json...
+[info] [2/5] Resolving packages...
+[error] warning Resolution field "redux@3.7.2" is incompatible with requested version "redux@^4.0.4"
+[error] warning Resolution field "redux@3.7.2" is incompatible with requested version "redux@^4.0.4"
+[error] warning Resolution field "redux@3.7.2" is incompatible with requested version "redux@^4.0.0"
+[info] success Already up-to-date.
+[info] $ cd tools/proxy && yarn install
+[info] yarn install v1.22.22
+[error] warning package.json: No license field
+[error] warning proxy@1.0.0: No license field
+[info] [1/4] Resolving packages...
+[info] success Already up-to-date.
+[info] Done in 0.25s.
+[info] Done in 1.61s.
+[info] yarn init v1.22.22
+[error] warning The yes flag has been set. This will automatically answer yes to all questions, which may have security implications.
+[info] success Saved package.json
+[info] Done in 0.08s.
+[info] yarn add v1.22.22
+[info] info No lockfile found.
+[info] [1/4] Resolving packages...
+[info] [2/4] Fetching packages...
+[info] [3/4] Linking dependencies...
+[info] [4/4] Building fresh packages...
+[info] success Saved lockfile.
+[info] success Saved 1 new dependency.
+[info] info Direct dependencies
+[info] └─ commander@10.0.0
+[info] info All dependencies
+[info] └─ commander@10.0.0
+[info] Done in 0.27s.
