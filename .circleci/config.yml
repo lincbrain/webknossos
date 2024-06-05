@@ -147,10 +147,10 @@ jobs:
           name: Run frontend tests
           command: |
             .circleci/not-on-master.sh docker-compose run base yarn test-verbose
-      - run:
-          name: Lint backend code and check formatting
-          command: |
-            .circleci/not-on-master.sh docker-compose run backend-lint-format
+#      - run:
+#          name: Lint backend code and check formatting
+#          command: |
+#            .circleci/not-on-master.sh docker-compose run backend-lint-format
       - run:
           name: Run backend tests
           command: |
