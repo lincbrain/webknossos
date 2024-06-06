@@ -73,6 +73,7 @@ jobs:
           name: Build webknossos (webpack)
           command: |
             docker-compose run base yarn build
+            
       - run:
           name: Build webknossos (sbt)
           command: |
