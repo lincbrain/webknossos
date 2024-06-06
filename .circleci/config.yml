@@ -73,7 +73,7 @@ jobs:
           name: Build webknossos (webpack)
           command: |
             docker-compose run base yarn build
-            
+
       - run:
           name: Build webknossos (sbt)
           command: |
@@ -109,6 +109,7 @@ jobs:
           key: yarn-cache-{{ checksum ".circleci/cache_version" }}-{{ checksum "yarn.lock" }}
           paths:
             - "~/.cache/yarn"
+
 
       - save_cache:
           name: Save webpack cache
