@@ -27,7 +27,7 @@ jobs:
       - run:
           name: Build webknossos-dev docker image
           command: |
-            docker pull scalableminds/webknossos-dev:$NORMALIZED_BRANCH || true
+            docker pull lincbrain/webknossos-dev:$NORMALIZED_BRANCH || true
             DEV_CACHE=$NORMALIZED_BRANCH docker-compose build base
       - run:
           name: Prepare dependency folders
