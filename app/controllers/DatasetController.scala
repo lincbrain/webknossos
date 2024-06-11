@@ -5,17 +5,18 @@ import com.scalableminds.util.accesscontext.{DBAccessContext, GlobalAccessContex
 import com.scalableminds.util.geometry.{BoundingBox, Vec3Int}
 import com.scalableminds.util.time.Instant
 import com.scalableminds.util.tools.{Fox, TristateOptionJsonHelper}
-import com.scalableminds.webknossos.datastore.models.datasource.ElementClass
+import com.scalableminds.webknossos.datastore.models.datasource.{DataLayer, ElementClass, GenericDataSource}
 import models.analytics.{AnalyticsService, ChangeDatasetSettingsEvent, OpenDatasetEvent}
 import models.dataset._
 import models.dataset.explore.{
   ExploreAndAddRemoteDatasetParameters,
-  WKExploreRemoteLayerParameters,
-  WKExploreRemoteLayerService
+  ExploreRemoteDatasetParameters,
+  ExploreRemoteLayerService
 }
 import models.organization.OrganizationDAO
 import models.team.{TeamDAO, TeamService}
 import models.user.{User, UserDAO, UserService}
+import net.liftweb.common.{Box, Empty, Failure, Full}
 import play.api.i18n.{Messages, MessagesProvider}
 import play.api.libs.functional.syntax._
 import play.api.libs.json._
@@ -23,6 +24,7 @@ import play.api.mvc.{Action, AnyContent, PlayBodyParsers}
 import utils.{ObjectId, WkConf}
 
 import javax.inject.Inject
+import scala.collection.mutable.ListBuffer
 import scala.concurrent.{ExecutionContext, Future}
 import com.scalableminds.webknossos.datastore.models.AdditionalCoordinate
 import mail.{MailchimpClient, MailchimpTag}
@@ -69,7 +71,7 @@ class DatasetController @Inject()(userService: UserService,
                                   conf: WkConf,
                                   analyticsService: AnalyticsService,
                                   mailchimpClient: MailchimpClient,
-                                  wkExploreRemoteLayerService: WKExploreRemoteLayerService,
+                                  exploreRemoteLayerService: ExploreRemoteLayerService,
                                   sil: Silhouette[WkEnv])(implicit ec: ExecutionContext, bodyParsers: PlayBodyParsers)
     extends Controller {
 
@@ -105,29 +107,46 @@ class DatasetController @Inject()(userService: UserService,
       }
     }
 
-  def exploreRemoteDataset(): Action[List[WKExploreRemoteLayerParameters]] =
-    sil.SecuredAction.async(validateJson[List[WKExploreRemoteLayerParameters]]) { implicit request =>
+  def exploreRemoteDataset(): Action[List[ExploreRemoteDatasetParameters]] =
+    sil.SecuredAction.async(validateJson[List[ExploreRemoteDatasetParameters]]) { implicit request =>
+      val reportMutable = ListBuffer[String]()
       for {
-        exploreResponse <- wkExploreRemoteLayerService.exploreRemoteDatasource(request.body, request.identity)
-      } yield Ok(Json.toJson(exploreResponse))
+        dataSourceBox: Box[GenericDataSource[DataLayer]] <- exploreRemoteLayerService
+          .exploreRemoteDatasource(request.body, request.identity, reportMutable)
+          .futureBox
+        dataSourceOpt = dataSourceBox match {
+          case Full(dataSource) if dataSource.dataLayers.nonEmpty =>
+            reportMutable += s"Resulted in dataSource with ${dataSource.dataLayers.length} layers."
+            Some(dataSource)
+          case Full(_) =>
+            reportMutable += "Error when exploring as layer set: Resulted in zero layers."
+            None
+          case f: Failure =>
+            reportMutable += s"Error when exploring as layer set: ${Fox.failureChainAsString(f)}"
+            None
+          case Empty =>
+            reportMutable += "Error when exploring as layer set: Empty"
+            None
+        }
+      } yield Ok(Json.obj("dataSource" -> Json.toJson(dataSourceOpt), "report" -> reportMutable.mkString("\n")))
     }
 
   // Note: This route is used by external applications, keep stable
   def exploreAndAddRemoteDataset(): Action[ExploreAndAddRemoteDatasetParameters] =
     sil.SecuredAction.async(validateJson[ExploreAndAddRemoteDatasetParameters]) { implicit request =>
-      val adaptedParameters =
-        WKExploreRemoteLayerParameters(request.body.remoteUri, None, None, None, request.body.dataStoreName)
+      val reportMutable = ListBuffer[String]()
+      val adaptedParameters = ExploreRemoteDatasetParameters(request.body.remoteUri, None, None, None)
       for {
-        exploreResponse <- wkExploreRemoteLayerService.exploreRemoteDatasource(List(adaptedParameters),
-                                                                               request.identity)
-        dataSource <- exploreResponse.dataSource ?~> "dataset.explore.failed"
+        dataSource <- exploreRemoteLayerService.exploreRemoteDatasource(List(adaptedParameters),
+                                                                        request.identity,
+                                                                        reportMutable)
         _ <- bool2Fox(dataSource.dataLayers.nonEmpty) ?~> "dataset.explore.zeroLayers"
         folderIdOpt <- Fox.runOptional(request.body.folderPath)(folderPath =>
           folderService.getOrCreateFromPathLiteral(folderPath, request.identity._organization)) ?~> "dataset.explore.autoAdd.getFolder.failed"
-        _ <- wkExploreRemoteLayerService.addRemoteDatasource(dataSource,
-                                                             request.body.datasetName,
-                                                             request.identity,
-                                                             folderIdOpt) ?~> "dataset.explore.autoAdd.failed"
+        _ <- exploreRemoteLayerService.addRemoteDatasource(dataSource,
+                                                           request.body.datasetName,
+                                                           request.identity,
+                                                           folderIdOpt) ?~> "dataset.explore.autoAdd.failed"
       } yield Ok
     }
 

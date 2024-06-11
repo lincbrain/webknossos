@@ -2,7 +2,7 @@ import type { Dispatch } from "redux";
 import { Tooltip, Typography, Tag } from "antd";
 import { SettingOutlined, InfoCircleOutlined, EditOutlined } from "@ant-design/icons";
 import { connect } from "react-redux";
-import Markdown from "libs/markdown_adapter";
+import Markdown from "react-remarkable";
 import React, { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import type { APIDataset, APIUser } from "types/api_flow_types";
@@ -381,7 +381,14 @@ export class DatasetInfoTabView extends React.PureComponent<Props, State> {
                 fontSize: 14,
               }}
             >
-              <Markdown>{datasetDescription}</Markdown>
+              <Markdown
+                source={datasetDescription}
+                options={{
+                  html: false,
+                  breaks: true,
+                  linkify: true,
+                }}
+              />
             </div>
           ) : null}
         </div>
@@ -447,7 +454,15 @@ export class DatasetInfoTabView extends React.PureComponent<Props, State> {
     const description = isDescriptionEmpty ? (
       annotationDescription
     ) : (
-      <Markdown>{annotationDescription}</Markdown>
+      <Markdown
+        source={annotationDescription}
+        container={"span"}
+        options={{
+          html: false,
+          breaks: true,
+          linkify: true,
+        }}
+      />
     );
     const buttonStylesForMarkdownRendering: CSSProperties = isDescriptionEmpty
       ? {}
@@ -498,7 +513,14 @@ export class DatasetInfoTabView extends React.PureComponent<Props, State> {
     return (
       <div className="info-tab-block">
         <p className="sidebar-label">Description</p>
-        <Markdown>{annotationDescription}</Markdown>
+        <Markdown
+          source={annotationDescription}
+          options={{
+            html: false,
+            breaks: true,
+            linkify: true,
+          }}
+        />
       </div>
     );
   }

@@ -27,6 +27,7 @@ case class Organization(
     includedStorageBytes: Option[Long], // None means unlimited
     _rootFolder: ObjectId,
     newUserMailingList: String = "",
+    overTimeMailingList: String = "",
     enableAutoVerify: Boolean = false,
     lastTermsOfServiceAcceptanceTime: Option[Instant] = None,
     lastTermsOfServiceAcceptanceVersion: Int = 0,
@@ -58,6 +59,7 @@ class OrganizationDAO @Inject()(sqlClient: SqlClient)(implicit ec: ExecutionCont
         r.includedstorage,
         ObjectId(r._Rootfolder),
         r.newusermailinglist,
+        r.overtimemailinglist,
         r.enableautoverify,
         r.lasttermsofserviceacceptancetime.map(Instant.fromSql),
         r.lasttermsofserviceacceptanceversion,
@@ -100,11 +102,11 @@ class OrganizationDAO @Inject()(sqlClient: SqlClient)(implicit ec: ExecutionCont
     for {
       _ <- run(q"""INSERT INTO webknossos.organizations
                    (_id, name, additionalInformation, logoUrl, displayName, _rootFolder,
-                   newUserMailingList, enableAutoVerify,
+                   newUserMailingList, overTimeMailingList, enableAutoVerify,
                    pricingplan, paidUntil, includedusers, includedstorage, lastTermsOfServiceAcceptanceTime, lastTermsOfServiceAcceptanceVersion, created, isDeleted)
                    VALUES
                    (${o._id}, ${o.name}, ${o.additionalInformation}, ${o.logoUrl}, ${o.displayName}, ${o._rootFolder},
-                   ${o.newUserMailingList}, ${o.enableAutoVerify},
+                   ${o.newUserMailingList}, ${o.overTimeMailingList}, ${o.enableAutoVerify},
                    ${o.pricingPlan}, ${o.paidUntil}, ${o.includedUsers}, ${o.includedStorageBytes}, ${o.lastTermsOfServiceAcceptanceTime},
                    ${o.lastTermsOfServiceAcceptanceVersion}, ${o.created}, ${o.isDeleted})
             """.asUpdate)

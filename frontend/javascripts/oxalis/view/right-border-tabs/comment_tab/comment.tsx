@@ -18,6 +18,7 @@ function linkify(comment: string) {
 type CommentProps = {
   isActive: boolean;
   comment: CommentType;
+  style: Record<string, any>;
 };
 export const commentListId = "commentList";
 
@@ -53,42 +54,49 @@ function ActiveCommentPopover({
   );
 }
 
-export function Comment({ comment, isActive }: CommentProps) {
+export function Comment({ comment, isActive, style }: CommentProps) {
   const handleClick = () => {
     Store.dispatch(setActiveNodeAction(comment.nodeId));
   };
 
-  const liClassName = classNames("markdown", "markdown-small", "nowrap");
-
+  const liClassName = classNames("markdown", "markdown-small", "nowrap", "comment", {
+    "comment-active": isActive,
+  });
+  const iClassName = classNames("fa", "fa-fw", {
+    "fa-angle-right": isActive,
+  });
   const isMultiLine = comment.content.indexOf("\n") !== -1;
 
   return (
-    <div className={liClassName}>
-      <span>
-        <a onClick={handleClick}>{comment.nodeId}</a>
-        {" - "}
-      </span>
-      <span
-        style={{
-          display: "inline-block",
-        }}
-      >
-        <MarkdownWrapper source={linkify(comment.content)} singleLine />
-      </span>
-      {isMultiLine ? (
-        <ActiveCommentPopover comment={comment} isActive={isActive}>
-          <span
-            style={{
-              marginLeft: 5,
-            }}
-          >
-            <a onClick={handleClick}>
-              <i className="far fa-comment-dots" />
-            </a>
-          </span>
-        </ActiveCommentPopover>
-      ) : null}
-    </div>
+    <li style={style}>
+      <div className={liClassName}>
+        <span>
+          <i className={iClassName} />
+          <a onClick={handleClick}>{comment.nodeId}</a>
+          {" - "}
+        </span>
+        <span
+          style={{
+            display: "inline-block",
+          }}
+        >
+          <MarkdownWrapper source={linkify(comment.content)} singleLine />
+        </span>
+        {isMultiLine ? (
+          <ActiveCommentPopover comment={comment} isActive={isActive}>
+            <span
+              style={{
+                marginLeft: 5,
+              }}
+            >
+              <a onClick={handleClick}>
+                <i className="far fa-comment-dots" />
+              </a>
+            </span>
+          </ActiveCommentPopover>
+        ) : null}
+      </div>
+    </li>
   );
 }
 export default Comment;

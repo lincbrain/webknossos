@@ -1,5 +1,5 @@
 import { Alert, Modal, Button, Row, Col, Input } from "antd";
-import Markdown from "libs/markdown_adapter";
+import Markdown from "react-remarkable";
 import * as React from "react";
 
 function getFirstLine(comment: string) {
@@ -9,7 +9,16 @@ function getFirstLine(comment: string) {
 
 export function MarkdownWrapper({ source, singleLine }: { source: string; singleLine?: boolean }) {
   const content = singleLine ? getFirstLine(source) : source;
-  return <Markdown>{content}</Markdown>;
+  return (
+    <Markdown
+      source={content}
+      options={{
+        html: false,
+        breaks: true,
+        linkify: true,
+      }}
+    />
+  );
 }
 
 export function MarkdownModal({

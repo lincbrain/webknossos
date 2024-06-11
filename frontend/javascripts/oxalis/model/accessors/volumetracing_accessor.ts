@@ -2,7 +2,6 @@ import memoizeOne from "memoize-one";
 import type {
   APIAnnotation,
   APIAnnotationInfo,
-  APIDataLayer,
   APIDataset,
   APISegmentationLayer,
   AdditionalCoordinate,
@@ -778,13 +777,4 @@ export function getMeshInfoForSegment(
   );
   if (meshesForAddCoords == null) return null;
   return meshesForAddCoords[segmentId];
-}
-
-export function getReadableNameOfVolumeLayer(
-  layer: APIDataLayer,
-  tracing: HybridTracing,
-): string | null {
-  return "tracingId" in layer && layer.tracingId != null
-    ? getReadableNameByVolumeTracingId(tracing, layer.tracingId)
-    : null;
 }

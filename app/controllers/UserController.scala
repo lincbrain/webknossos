@@ -173,8 +173,13 @@ class UserController @Inject()(userService: UserService,
       isAdmin: Option[Boolean]
   ): Action[AnyContent] = sil.SecuredAction.async { implicit request =>
     for {
-      userCompactInfos <- userDAO.findAllCompactWithFilters(isEditable, isTeamManagerOrAdmin, isAdmin, request.identity)
-      js <- Fox.serialCombined(userCompactInfos.sortBy(_.lastName.toLowerCase))(userService.publicWritesCompact)
+      (users, userCompactInfos) <- userDAO.findAllCompactWithFilters(isEditable,
+                                                                     isTeamManagerOrAdmin,
+                                                                     isAdmin,
+                                                                     request.identity)
+      zipped = users.zip(userCompactInfos)
+      js <- Fox.serialCombined(zipped.sortBy(_._1.lastName.toLowerCase))(u =>
+        userService.publicWritesCompact(u._1, u._2))
     } yield Ok(Json.toJson(js))
   }
 

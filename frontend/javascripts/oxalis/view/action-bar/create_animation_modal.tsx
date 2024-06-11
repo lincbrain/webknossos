@@ -35,8 +35,7 @@ import {
 } from "admin/organization/pricing_plan_utils";
 import { BoundingBoxType, Vector3 } from "oxalis/constants";
 import BoundingBox from "oxalis/model/bucket_data_handling/bounding_box";
-import { BoundingBoxSelection } from "./starting_job_modals";
-import { LayerSelection } from "components/layer_selection";
+import { BoundingBoxSelection, LayerSelection } from "./starting_job_modals";
 import { getAdditionalCoordinatesAsString } from "oxalis/model/accessors/flycam_accessor";
 
 type Props = {

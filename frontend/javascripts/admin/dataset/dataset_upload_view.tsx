@@ -620,6 +620,7 @@ class DatasetUploadView extends React.Component<PropsWithFormAndRouter, State> {
   };
 
   render() {
+    const form = this.formRef.current;
     const { activeUser, withoutCard, datastores } = this.props;
     const isDatasetManagerOrAdmin = Utils.isUserAdminOrDatasetManager(this.props.activeUser);
 
@@ -711,6 +712,8 @@ class DatasetUploadView extends React.Component<PropsWithFormAndRouter, State> {
             </FormItemWithInfo>
 
             <DatastoreFormItem
+              // @ts-expect-error ts-migrate(2322) FIXME: Type '{ form: FormInstance<any> | null; datastores... Remove this comment to see the full error message
+              form={form}
               datastores={uploadableDatastores}
               hidden={hasOnlyOneDatastoreOrNone}
             />

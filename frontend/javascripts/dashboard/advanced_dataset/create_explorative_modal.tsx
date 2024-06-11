@@ -252,7 +252,7 @@ function CreateExplorativeModal({ datasetId, onClose }: Props) {
             title="Create new annotation with selected properties"
           >
             <Button size="large" type="primary">
-              Create Annotation
+              Create Annotation A
             </Button>
           </Link>
         </div>

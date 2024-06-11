@@ -32,10 +32,14 @@ import {
   getAuthToken,
   startExportTiffJob,
 } from "admin/admin_rest_api";
-import { BoundingBoxSelection, MagSlider } from "oxalis/view/action-bar/starting_job_modals";
+import {
+  LayerSelection,
+  BoundingBoxSelection,
+  getReadableNameOfVolumeLayer,
+  MagSlider,
+} from "oxalis/view/action-bar/starting_job_modals";
 import { getUserBoundingBoxesFromState } from "oxalis/model/accessors/tracing_accessor";
 import {
-  getReadableNameOfVolumeLayer,
   getVolumeTracingById,
   hasVolumeTracings,
 } from "oxalis/model/accessors/volumetracing_accessor";
@@ -55,7 +59,6 @@ import {
 import { formatCountToDataAmountUnit, formatScale } from "libs/format_utils";
 import { BoundingBoxType, Vector3 } from "oxalis/constants";
 import { useStartAndPollJob } from "admin/job/job_hooks";
-import { LayerSelection } from "components/layer_selection";
 const { Paragraph, Text } = Typography;
 
 type TabKeys = "download" | "export" | "python";
