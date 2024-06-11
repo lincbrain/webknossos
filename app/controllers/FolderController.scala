@@ -15,9 +15,6 @@ import utils.ObjectId
 import javax.inject.Inject
 import scala.concurrent.ExecutionContext
 
-import com.typesafe.scalalogging.LazyLogging
-import java.time.Instant
-
 class FolderController @Inject()(
     folderDAO: FolderDAO,
     folderService: FolderService,
@@ -27,7 +24,7 @@ class FolderController @Inject()(
     datasetDAO: DatasetDAO,
     organizationDAO: OrganizationDAO,
     sil: Silhouette[WkEnv])(implicit ec: ExecutionContext, playBodyParsers: PlayBodyParsers)
-    extends Controller with LazyLogging
+    extends Controller
     with FoxImplicits {
 
   def getRoot: Action[AnyContent] = sil.SecuredAction.async { implicit request =>
@@ -93,10 +90,6 @@ class FolderController @Inject()(
   }
 
   def getTree: Action[AnyContent] = sil.SecuredAction.async { implicit request =>
-
-    logger.info(s"${Instant.now} Aaron")  // Logging the timestamp and "Aaron"
-
-
     for {
       organization <- organizationDAO.findOne(request.identity._organization)
       foldersWithParents <- folderDAO.findTreeOf(organization._rootFolder)

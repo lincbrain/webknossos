@@ -26,6 +26,7 @@ case class Job(
     state: JobState = JobState.PENDING,
     manualState: Option[JobState] = None,
     _worker: Option[ObjectId] = None,
+    _voxelyticsWorkflowHash: Option[String] = None,
     latestRunId: Option[String] = None,
     returnValue: Option[String] = None,
     started: Option[Long] = None,
@@ -107,6 +108,7 @@ class JobDAO @Inject()(sqlClient: SqlClient)(implicit ec: ExecutionContext)
         state,
         manualStateOpt,
         r._Worker.map(ObjectId(_)),
+        r._VoxelyticsWorkflowhash,
         r.latestrunid,
         r.returnvalue,
         r.started.map(_.getTime),
@@ -203,6 +205,16 @@ class JobDAO @Inject()(sqlClient: SqlClient)(implicit ec: ExecutionContext)
       parsed <- parseAll(r)
     } yield parsed
 
+  def organizationIdForJobId(jobId: ObjectId): Fox[ObjectId] =
+    for {
+      r <- run(q"""SELECT u._organization
+           FROM webknossos.users u
+           JOIN webknossos.jobs j ON j._owner = u._id
+           WHERE j._id = $jobId
+           """.as[ObjectId])
+      firstRow <- r.headOption
+    } yield firstRow
+
   def insertOne(j: Job): Fox[Unit] =
     for {
       _ <- run(q"""INSERT INTO webknossos.jobs(
@@ -233,6 +245,11 @@ class JobDAO @Inject()(sqlClient: SqlClient)(implicit ec: ExecutionContext)
                    started = ${s.started},
                    ended = ${s.ended}
                    WHERE _id = $jobId""".asUpdate)
+    } yield ()
+
+  def updateVoxelyticsWorkflow(jobId: ObjectId, workflowHash: String): Fox[Unit] =
+    for {
+      _ <- run(q"""UPDATE webknossos.jobs SET _voxelytics_workflowHash = $workflowHash WHERE _id = $jobId""".asUpdate)
     } yield ()
 
   def reserveNextJob(worker: Worker, jobCommands: Set[JobCommand]): Fox[Unit] =
