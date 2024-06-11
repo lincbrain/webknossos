@@ -222,21 +222,17 @@ jobs:
             retry docker-compose push webknossos-tracingstore
             if [ -n "$CIRCLE_BRANCH" ]; then
               docker tag \
-                scalableminds/webknossos:${DOCKER_TAG} \
-                scalableminds/webknossos:${NORMALIZED_BRANCH}
-              retry docker push scalableminds/webknossos:${NORMALIZED_BRANCH}
+                lincbrain/webknossos:${DOCKER_TAG} \
+                lincbrain/webknossos:${NORMALIZED_BRANCH}
+              retry docker push lincbrain/webknossos:${NORMALIZED_BRANCH}
               docker tag \
-                scalableminds/webknossos-datastore:${DOCKER_TAG} \
-                scalableminds/webknossos-datastore:${NORMALIZED_BRANCH}
-              retry docker push scalableminds/webknossos-datastore:${NORMALIZED_BRANCH}
+                lincbrain/webknossos-datastore:${DOCKER_TAG} \
+                lincbrain/webknossos-datastore:${NORMALIZED_BRANCH}
+              retry docker push lincbrain/webknossos-datastore:${NORMALIZED_BRANCH}
               docker tag \
-                scalableminds/webknossos-tracingstore:${DOCKER_TAG} \
-                scalableminds/webknossos-tracingstore:${NORMALIZED_BRANCH}
-              retry docker push scalableminds/webknossos-tracingstore:${NORMALIZED_BRANCH}
-              docker tag \
-                scalableminds/webknossos-dev \
-                scalableminds/webknossos-dev:${NORMALIZED_BRANCH}
-              retry docker push scalableminds/webknossos-dev:${NORMALIZED_BRANCH}
+                lincbrain/webknossos-tracingstore:${DOCKER_TAG} \
+                lincbrain/webknossos-tracingstore:${NORMALIZED_BRANCH}
+              retry docker push lincbrain/webknossos-tracingstore:${NORMALIZED_BRANCH}
             fi
             docker logout
       - run:
