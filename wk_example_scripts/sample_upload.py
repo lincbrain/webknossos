@@ -4,7 +4,7 @@
 
 # Go get your token from https://webknossos-staging.lincbrain.org/auth/token
 
-# WK_TOKEN="<token-here>" WK_URL="https://webknossos-staging.lincbrain.org/" python3 sample_script.py
+# WK_TOKEN="<token-here>" WK_URL="https://webknossos-staging.lincbrain.org/" python3 sample_upload.py
 
 # You may need to install pooch, scikit-image locally (pip install pooch scikit-image)
 
