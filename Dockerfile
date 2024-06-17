@@ -8,7 +8,7 @@ RUN curl -sL "https://deb.nodesource.com/setup_${VERSION_NODE}" | bash - \
 RUN mkdir -p /webknossos
 WORKDIR /webknossos
 
-COPY . .
+COPY target/universal/stage .
 
 
 RUN addgroup --system --gid 999 webknossos \
