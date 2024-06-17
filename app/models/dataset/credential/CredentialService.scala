@@ -10,13 +10,14 @@ import com.scalableminds.webknossos.datastore.storage.{
 }
 import net.liftweb.common.Box.tryo
 import play.api.libs.json.Json
-import utils.ObjectId
+import utils.{ObjectId, WkConf}
 
 import java.net.URI
 import javax.inject.Inject
 import scala.concurrent.ExecutionContext
 
-class CredentialService @Inject()(credentialDAO: CredentialDAO) {
+class CredentialService @Inject()(credentialDAO: CredentialDAO,
+                                  conf: WkConf) {
 
   def createCredentialOpt(uri: URI,
                           credentialIdentifier: Option[String],
@@ -33,10 +34,17 @@ class CredentialService @Inject()(credentialDAO: CredentialDAO) {
                                     userId.toString,
                                     organizationId.toString))
       case DataVaultService.schemeS3 =>
-        (credentialIdentifier, credentialSecret) match {
-          case (Some(keyId), Some(secretKey)) =>
-            Some(S3AccessKeyCredential(uri.toString, keyId, secretKey, userId.toString, organizationId.toString))
-          case _ => None
+        val s3PrivateBucketConfigKeyword = conf.WebKnossos.S3PrivateBucketConfig.keyword
+        if (uri.toString.contains(s3PrivateBucketConfigKeyword)) {
+          val s3AccessIdKey = sys.env("AWS_ACCESS_KEY_ID")
+          val s3SecretAccessKey = sys.env("AWS_ACCESS_KEY")
+          Some(S3AccessKeyCredential(uri.toString, s3AccessIdKey, s3SecretAccessKey, userId.toString, organizationId.toString))
+        } else {
+          (credentialIdentifier, credentialSecret) match {
+            case (Some(keyId), Some(secretKey)) =>
+              Some(S3AccessKeyCredential(uri.toString, keyId, secretKey, userId.toString, organizationId.toString))
+            case _ => None
+          }
         }
       case DataVaultService.schemeGS =>
         for {
@@ -46,6 +54,7 @@ class CredentialService @Inject()(credentialDAO: CredentialDAO) {
       case _ =>
         None
     }
+
 
   def insertOne(credential: DataVaultCredential)(implicit ec: ExecutionContext): Fox[ObjectId] = {
     val _id = ObjectId.generate
