@@ -35,7 +35,8 @@ class CredentialService @Inject()(credentialDAO: CredentialDAO,
                                     organizationId.toString))
       case DataVaultService.schemeS3 =>
         val s3PrivateBucketConfigKeyword = conf.WebKnossos.S3PrivateBucketConfig.keyword
-        if (uri.toString.contains(s3PrivateBucketConfigKeyword)) {
+        val isPrivateBucketEnabled = conf.WebKnossos.S3PrivateBucketConfig.enabled
+        if (uri.toString.contains(s3PrivateBucketConfigKeyword) && isPrivateBucketEnabled) {
           val s3AccessIdKey = sys.env("AWS_ACCESS_KEY_ID")
           val s3SecretAccessKey = sys.env("AWS_ACCESS_KEY")
           Some(S3AccessKeyCredential(uri.toString, s3AccessIdKey, s3SecretAccessKey, userId.toString, organizationId.toString))
