@@ -16,8 +16,7 @@ import java.net.URI
 import javax.inject.Inject
 import scala.concurrent.ExecutionContext
 
-class CredentialService @Inject()(credentialDAO: CredentialDAO,
-                                  conf: WkConf) {
+class CredentialService @Inject()(credentialDAO: CredentialDAO, conf: WkConf) {
 
   def createCredentialOpt(uri: URI,
                           credentialIdentifier: Option[String],
@@ -39,7 +38,12 @@ class CredentialService @Inject()(credentialDAO: CredentialDAO,
         if (uri.toString.contains(s3PrivateBucketConfigKeyword) && isPrivateBucketEnabled) {
           val s3AccessIdKey = sys.env("AWS_ACCESS_KEY_ID")
           val s3SecretAccessKey = sys.env("AWS_ACCESS_KEY")
-          Some(S3AccessKeyCredential(uri.toString, s3AccessIdKey, s3SecretAccessKey, userId.toString, organizationId.toString))
+          Some(
+            S3AccessKeyCredential(uri.toString,
+                                  s3AccessIdKey,
+                                  s3SecretAccessKey,
+                                  userId.toString,
+                                  organizationId.toString))
         } else {
           (credentialIdentifier, credentialSecret) match {
             case (Some(keyId), Some(secretKey)) =>
@@ -55,7 +59,6 @@ class CredentialService @Inject()(credentialDAO: CredentialDAO,
       case _ =>
         None
     }
-
 
   def insertOne(credential: DataVaultCredential)(implicit ec: ExecutionContext): Fox[ObjectId] = {
     val _id = ObjectId.generate
