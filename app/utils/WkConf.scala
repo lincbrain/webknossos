@@ -97,6 +97,11 @@ class WkConf @Inject()(configuration: Configuration) extends ConfigReader with L
       val content: String = get[String]("webKnossos.securityTxt.content")
     }
 
+    object S3PrivateBucketConfig {
+      val keyword: String = get[String]("webKnossos.s3PrivateBucketConfig.keyword")
+      val enabled: Boolean = get[Boolean]("webKnossos.s3PrivateBucketConfig.enabled")
+    }
+
     val operatorData: String = get[String]("webKnossos.operatorData")
     val children = List(User, Tasks, Cache, SampleOrganization, FetchUsedStorage, TermsOfService)
   }
