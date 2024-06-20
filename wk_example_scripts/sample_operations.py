@@ -6,18 +6,18 @@ import webknossos as wk
 
 
 def main() -> None:
-  pass
     #####################
     # Opening a dataset #
     #####################
 
-    # x = wk.Dataset.open_remote(
-    #   "https://webknossos.org/datasets/scalable_minds/l4dense_motta_et_al_demo"
-    # )
+    x = wk.Dataset.open_remote(
+      "https://webknossos-staging.lincbrain.org/datasets/LINC_Staging/sub-s45_sample-fullhemisphere_PC.ome.zarr"
+    )
+    breakpoint()
 
     # print(dataset)
-    # Assuming that the dataset has a layer "color"
-    # and the layer has the magnification 1
+    # # Assuming that the dataset has a layer "color"
+    # # and the layer has the magnification 1
     # layer = dataset.get_layer("color")
     # mag1 = layer.get_mag("1")
 

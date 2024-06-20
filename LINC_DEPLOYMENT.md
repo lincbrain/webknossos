@@ -62,7 +62,7 @@ events {}
 http {
     server {
         listen 80;
-        server_name webknossos.lincbrain.org;
+        server_name webknossos-staging.lincbrain.org;
 
         location /.well-known/acme-challenge/ {
             root /data/letsencrypt;
@@ -75,17 +75,20 @@ http {
 
     server {
         listen 443 ssl;
-        server_name webknossos.lincbrain.org;
+        server_name webknossos-staging.lincbrain.org;
 
-        ssl_certificate /etc/letsencrypt/live/webknossos.lincbrain.org/fullchain.pem;
-        ssl_certificate_key /etc/letsencrypt/live/webknossos.lincbrain.org/privkey.pem;
+        ssl_certificate /etc/letsencrypt/live/webknossos-staging.lincbrain.org/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/webknossos-staging.lincbrain.org/privkey.pem;
 
         location / {
             proxy_pass http://webknossos-webknossos-1:9000;
+            proxy_http_version 1.1;  # Ensure HTTP 1.1 is used for backend communication saving annotations
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Transfer-Encoding "";  # Clear the Transfer-Encoding header
+            proxy_buffering off;  # Optional: Turn off buffering for troubleshooting
         }
     }
 }
