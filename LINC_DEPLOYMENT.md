@@ -80,9 +80,13 @@ http {
         ssl_certificate /etc/letsencrypt/live/webknossos-staging.lincbrain.org/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/webknossos-staging.lincbrain.org/privkey.pem;
 
+        # webknossos-specific overrides: https://github.com/scalableminds/dockerfiles/blob/master/nginx-proxy/Dockerfile
+        client_max_body_size 0;
+        proxy_read_timeout 3600s; 
+
         location / {
             proxy_pass http://webknossos-webknossos-1:9000;
-            proxy_http_version 1.1;  # Ensure HTTP 1.1 is used for backend communication saving annotations
+            proxy_http_version 1.1;  # Ensure HTTP 1.1 is used for backend communication
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
