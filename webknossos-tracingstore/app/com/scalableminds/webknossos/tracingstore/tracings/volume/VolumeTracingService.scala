@@ -487,21 +487,33 @@ class VolumeTracingService @Inject()(
                                     voxelSize: Option[Vec3Double],
                                     os: OutputStream)(implicit ec: ExecutionContext): Fox[Unit] = {
     println(s"tracingId: ${tracingId}")
-    val dataLayer = volumeTracingLayer(tracingId, tracing)
-    val buckets: Iterator[NamedStream] = volumeDataZipFormmat match {
-      case VolumeDataZipFormat.wkw =>
-        new WKWBucketStreamSink(dataLayer, tracing.fallbackLayer.nonEmpty)(
-          dataLayer.bucketProvider.bucketStream(Some(tracing.version)),
-          tracing.resolutions.map(mag => vec3IntFromProto(mag)))
-      case VolumeDataZipFormat.zarr3 =>
-        new Zarr3BucketStreamSink(dataLayer, tracing.fallbackLayer.nonEmpty)(
-          dataLayer.bucketProvider.bucketStream(Some(tracing.version)),
-          tracing.resolutions.map(mag => vec3IntFromProto(mag)),
-          voxelSize)
+    try {
+      val dataLayer = volumeTracingLayer(tracingId, tracing)
+      val buckets: Iterator[NamedStream] = volumeDataZipFormmat match {
+        case VolumeDataZipFormat.wkw =>
+          new WKWBucketStreamSink(dataLayer, tracing.fallbackLayer.nonEmpty)(
+            dataLayer.bucketProvider.bucketStream(Some(tracing.version)),
+            tracing.resolutions.map(mag => vec3IntFromProto(mag)))
+        case VolumeDataZipFormat.zarr3 =>
+          new Zarr3BucketStreamSink(dataLayer, tracing.fallbackLayer.nonEmpty)(
+            dataLayer.bucketProvider.bucketStream(Some(tracing.version)),
+            tracing.resolutions.map(mag => vec3IntFromProto(mag)),
+            voxelSize)
+      }
+    } catch {
+      case e: Exception =>
+        println(s"Failed to create bucket stream sink: ${e.getMessage}")
+        e.printStackTrace()
     }
 
+
     val before = Instant.now
-    val zipResult = ZipIO.zip(buckets, os, level = Deflater.BEST_SPEED)
+    try {
+      val zipResult = ZipIO.zip(buckets, os, level = Deflater.BEST_SPEED)
+    } catch {
+      case e: Throwable => println("Failed due to: " + e.getMessage)
+        e.printStackTrace()
+    }
     println(s"made it past zipResult: ${tracingId}")
 
     println(s"made it past zipResult object: ${zipResult}")
