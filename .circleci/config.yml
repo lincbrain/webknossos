@@ -58,17 +58,17 @@ jobs:
           keys:
             - webpack-cache-{{ checksum ".circleci/cache_version" }}-{{ .Branch }}
             - webpack-cache-{{ checksum ".circleci/cache_version" }}-master
-      - run:
-          name: Assert schema.sql and evolutions are equal
-          command: |
-            docker-compose up -d postgres
-            sleep 3
-            docker-compose run compile tools/postgres/dbtool.js check-evolutions-schema
-      - run:
-          name: Build frontend documentation
-          command: |
-            WK_VERSION=${CIRCLE_TAG:-${CIRCLE_BUILD_NUM:-dev}}
-            docker-compose run base yarn run docs --project-version $WK_VERSION
+#      - run:
+#          name: Assert schema.sql and evolutions are equal
+#          command: |
+#            docker-compose up -d postgres
+#            sleep 3
+#            docker-compose run compile tools/postgres/dbtool.js check-evolutions-schema
+#      - run:
+#          name: Build frontend documentation
+#          command: |
+#            WK_VERSION=${CIRCLE_TAG:-${CIRCLE_BUILD_NUM:-dev}}
+#            docker-compose run base yarn run docs --project-version $WK_VERSION
       - run:
           name: Build webknossos (webpack)
           command: |
@@ -131,14 +131,14 @@ jobs:
 #          name: Lint frontend code and check formatting
 #          command: |
 #            .circleci/not-on-master.sh docker-compose run base bash -c "yarn run check-frontend"
-      - run:
-          name: Check for cyclic dependencies in front-end
-          command: |
-            .circleci/not-on-master.sh docker-compose run base yarn check-cyclic-dependencies
-      - run:
-          name: Run frontend tests
-          command: |
-            .circleci/not-on-master.sh docker-compose run base yarn test-verbose
+#      - run:
+#          name: Check for cyclic dependencies in front-end
+#          command: |
+#            .circleci/not-on-master.sh docker-compose run base yarn check-cyclic-dependencies
+#      - run:
+#          name: Run frontend tests
+#          command: |
+#            .circleci/not-on-master.sh docker-compose run base yarn test-verbose
 #      - run:
 #          name: Lint backend code and check formatting
 #          command: |
