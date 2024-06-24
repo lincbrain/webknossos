@@ -10,13 +10,14 @@ def main() -> None:
     # Opening a dataset #
     #####################
 
-    x = wk.Dataset.open_remote(
-      "https://webknossos-staging.lincbrain.org/datasets/LINC_Staging/sub-s45_sample-fullhemisphere_PC.ome.zarr"
-    )
+    # x = wk.Dataset.open_remote(
+    #   "https://webknossos-staging.lincbrain.org/datasets/LINC_Staging/sub-s45_sample-fullhemisphere_PC.ome.zarr"
+    # )
+    breakpoint()
+    a = wk.Annotation("https://webknossos-staging.lincbrain.org/annotations/6675cbce010000b6000706ac")
     annotation = wk.Annotation.download(
       "https://webknossos-staging.lincbrain.org/annotations/66745b06010000b7005637b0/"
-    )
-    breakpoint()
+    ).skeleton
 
 
 
