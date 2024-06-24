@@ -514,11 +514,9 @@ class VolumeTracingService @Inject()(
       case e: Throwable => println("Failed due to: " + e.getMessage)
         e.printStackTrace()
     }
-    println(s"made it past zipResult: ${tracingId}")
+    println(s"made it past zippyresult: ${tracingId}")
 
-    println(s"made it past zipResult object: ${zipResult}")
-
-
+    val zipResult = ZipIO.zip(buckets, os, level = Deflater.BEST_SPEED)
     zipResult.onComplete {
       case scala.util.Success(b) =>
         logger.info(s"Zipping volume data for $tracingId took ${Instant.since(before)} ms. Result: ${b.getOrElse("No result")}")
