@@ -512,14 +512,14 @@ class VolumeTracingService @Inject()(
           case scala.util.Failure(exception) =>
             logger.error(s"Error zipping volume data for $tracingId", exception)
         }
-        Fox.successful(zipResult)
-      } catch {
-        case e: Exception =>
-          println(s"Error during processing for $tracingId: ${e.getMessage}")
-          e.printStackTrace()
-          Fox.failure(new RuntimeException("Processing failed", e))
-      }
-     }
+          Fox.successful(zipResult)
+    } catch {
+      case e: Exception =>
+        println(s"Error during processing for $tracingId: ${e.getMessage}")
+        e.printStackTrace()
+        Fox.failure(s"Processing failed due to an exception: ${e.getMessage}")
+    }
+    }
 
 
   def isTemporaryTracing(tracingId: String): Fox[Boolean] =
