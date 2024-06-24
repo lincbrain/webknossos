@@ -500,31 +500,26 @@ class VolumeTracingService @Inject()(
             tracing.resolutions.map(mag => vec3IntFromProto(mag)),
             voxelSize)
       }
+
+      val before = Instant.now
+      val zipResult = ZipIO.zip(buckets, os, level = Deflater.BEST_SPEED)
+      println(s"made it past zipResult: ${tracingId}")
+
+      zipResult.onComplete {
+        case scala.util.Success(b) =>
+          logger.info(s"Zipping volume data for $tracingId took ${Instant.since(before)} ms. Result: ${b.getOrElse("No result")}")
+        case scala.util.Failure(exception) =>
+          logger.error(s"Error zipping volume data for $tracingId", exception)
+      }
+      zipResult
     } catch {
       case e: Exception =>
-        println(s"Failed to create bucket stream sink: ${e.getMessage}")
+        println(s"Error during processing for $tracingId: ${e.getMessage}")
         e.printStackTrace()
     }
-
-
-    val before = Instant.now
-    try {
-      val zipResult = ZipIO.zip(buckets, os, level = Deflater.BEST_SPEED)
-    } catch {
-      case e: Throwable => println("Failed due to: " + e.getMessage)
-        e.printStackTrace()
-    }
-    println(s"made it past zippyresult: ${tracingId}")
-
-    val zipResult = ZipIO.zip(buckets, os, level = Deflater.BEST_SPEED)
-    zipResult.onComplete {
-      case scala.util.Success(b) =>
-        logger.info(s"Zipping volume data for $tracingId took ${Instant.since(before)} ms. Result: ${b.getOrElse("No result")}")
-      case scala.util.Failure(exception) =>
-        logger.error(s"Error zipping volume data for $tracingId", exception)
    }
-    zipResult
-  }
+
+
 
   def isTemporaryTracing(tracingId: String): Fox[Boolean] =
     temporaryTracingIdStore.contains(temporaryIdKey(tracingId))
