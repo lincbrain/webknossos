@@ -135,6 +135,17 @@ docker ps
 docker logs -f <container-id>
 ```
 
+## Backups
 
+### FossilDB
+
+FossilDB is a scalableminds database that extends from the open-source RocksDB.
+
+Temp steps / commands for FossilDB backup:
+
+1. Exec into EC2 instance
+2. Grab `fossildb-client` via `docker pull scalableminds/fossildb-client:master`
+3. Determine the appropriate internal network that the `fossildb` instance is running in within the Dockerized setup on EC2: `docker inspect -f '{{range .NetworkSettings.Networks}}{{.NetworkID}} {{end}}' webknossos-fossildb-1`
+4. `docker run --network <network-id> scalableminds/fossildb-client:master webknossos-fossildb-1 backup` should create the backup
 
 
