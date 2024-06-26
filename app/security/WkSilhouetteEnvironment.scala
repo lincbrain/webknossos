@@ -29,7 +29,7 @@ class WkSilhouetteEnvironment @Inject()(
   private val cookieSettings = CookieAuthenticatorSettings(
     conf.Silhouette.CookieAuthenticator.cookieName,
     conf.Silhouette.CookieAuthenticator.cookiePath,
-    conf.Silhouette.CookieAuthenticator.domain,
+    Some(conf.Silhouette.CookieAuthenticator.domain),
     conf.Silhouette.CookieAuthenticator.secureCookie,
     conf.Silhouette.CookieAuthenticator.httpOnlyCookie,
     Some(Cookie.SameSite.Lax),
