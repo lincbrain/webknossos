@@ -82,17 +82,47 @@ http {
 
         # webknossos-specific overrides: https://github.com/scalableminds/dockerfiles/blob/master/nginx-proxy/Dockerfile
         client_max_body_size 0;
-        proxy_read_timeout 3600s; 
+        proxy_read_timeout 3600s;
 
         location / {
+            set $cors '';
+            if ($http_origin ~* (https://staging--lincbrain-org\.netlify\.app|https://.*\.lincbrain\.org|https://lincbrain\.org)) {
+                set $cors 'true';
+            }
+
+            if ($cors = 'true') {
+                add_header 'Access-Control-Allow-Origin' "$http_origin" always;
+                add_header 'Access-Control-Allow-Credentials' 'true' always;
+                add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+                add_header 'Access-Control-Allow-Headers' 'Accept, Content-Type, X-Requested-With, Authorization, Cookie' always;
+            }
+
+            # Handle preflight requests
+            if ($request_method = 'OPTIONS') {
+                add_header 'Access-Control-Allow-Origin' "$http_origin" always;
+                add_header 'Access-Control-Allow-Credentials' 'true' always;
+                add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+                add_header 'Access-Control-Allow-Headers' 'Accept, Content-Type, X-Requested-With, Authorization, Cookie' always;
+                add_header 'Content-Length' 0 always;
+                add_header 'Content-Type' 'text/plain' always;
+                return 204;
+            }
+
             proxy_pass http://webknossos-webknossos-1:9000;
-            proxy_http_version 1.1;  # Ensure HTTP 1.1 is used for backend communication
+            proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_set_header Transfer-Encoding "";  # Clear the Transfer-Encoding header
-            proxy_buffering off;  # Optional: Turn off buffering for troubleshooting
+            proxy_set_header Cookie $http_cookie;
+            proxy_set_header Transfer-Encoding "";
+            proxy_buffering off;
+
+            # Ensure no duplicate headers are set
+            proxy_hide_header Access-Control-Allow-Origin;
+            proxy_hide_header Access-Control-Allow-Credentials;
+            proxy_hide_header Access-Control-Allow-Methods;
+            proxy_hide_header Access-Control-Allow-Headers;
         }
     }
 }
