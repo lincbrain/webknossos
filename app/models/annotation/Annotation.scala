@@ -30,7 +30,7 @@ case class Annotation(
     _user: ObjectId,
     annotationLayers: List[AnnotationLayer],
     description: String = "",
-    visibility: AnnotationVisibility.Value = AnnotationVisibility.Internal,
+    visibility: AnnotationVisibility.Value = AnnotationVisibility.Public,
     name: String = "",
     viewConfiguration: Option[JsObject] = None,
     state: AnnotationState.Value = Active,

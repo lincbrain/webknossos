@@ -1,6 +1,6 @@
 #!/bin/bash
 # crontab -e
-# 0 2 * * * /home/ec2-user/opt/webknossos/fossil_db_cron_backup.sh >> /home/ec2-user/opt/webknossos/backup.log 2>&1
+# 0 2 * * * /home/ec2-user/opt/webknossos/postgres_backup.sh >> /home/ec2-user/opt/webknossos/backup.log 2>&1
 # Log file for debugging
 LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
 
@@ -13,7 +13,6 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
   export AWS_DEFAULT_REGION="us-east-2"
 
   # Define the subdirectory to back up and the S3 bucket name
-  BACKUP_DIRECTORY="/home/ec2-user/opt/webknossos/persistent/fossildb/backup/private"
   S3_BUCKET="linc-brain-mit-staging-us-east-2"
   TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
   BACKUP_NAME="backup_$TIMESTAMP.tar.gz"
@@ -22,15 +21,12 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
   cd /home/ec2-user/opt/webknossos
 
   # Call the docker-compose step without TTY
-  /usr/local/bin/docker-compose run -T fossil-db-backup
+  /usr/local/bin/docker-compose run -T postgres-backup
 
   if [ $? -ne 0 ]; then
     echo "Docker-compose step failed"
     exit 1
   fi
-
-  # Create a tar.gz archive of the backup directory
-  /bin/tar -czf /tmp/$BACKUP_NAME -C $BACKUP_DIRECTORY .
 
   if [ $? -ne 0 ]; then
     echo "Failed to create tar.gz archive"
@@ -38,7 +34,7 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
   fi
 
   # Upload the backup to the S3 bucket
-  /usr/bin/aws s3 cp /tmp/$BACKUP_NAME s3://$S3_BUCKET/fossildb_backups/$BACKUP_NAME
+  /usr/bin/aws s3 cp /home/ec2-user/opt/webknossos s3://$S3_BUCKET/postgres_backups/$BACKUP_NAME
 
   if [ $? -ne 0 ]; then
     echo "Failed to upload to S3"

@@ -475,9 +475,7 @@ class VolumeTracingService @Inject()(
                  volumeDataZipFormat: VolumeDataZipFormat,
                  voxelSize: Option[Vec3Double])(implicit ec: ExecutionContext): Fox[Files.TemporaryFile] = {
     val zipped = temporaryFileCreator.create(tracingId, ".zip")
-    println(s"Temporary file created at: ${zipped.path.toString}")
     val os = new BufferedOutputStream(new FileOutputStream(new File(zipped.path.toString)))
-    println(s"Past new BufferedOutputStream")
     allDataToOutputStream(tracingId, tracing, volumeDataZipFormat, voxelSize, os).map(_ => zipped)
   }
 
@@ -486,7 +484,6 @@ class VolumeTracingService @Inject()(
                                     volumeDataZipFormmat: VolumeDataZipFormat,
                                     voxelSize: Option[Vec3Double],
                                     os: OutputStream)(implicit ec: ExecutionContext): Fox[Unit] = {
-      println(s"tracingId: ${tracingId}")
 
       try {
         val dataLayer = volumeTracingLayer(tracingId, tracing)
@@ -504,7 +501,6 @@ class VolumeTracingService @Inject()(
 
         val before = Instant.now
         val zipResult = ZipIO.zip(buckets, os, level = Deflater.BEST_SPEED)
-        println(s"made it past zipResult: ${tracingId}")
 
         zipResult.onComplete {
           case scala.util.Success(b) =>
@@ -515,7 +511,6 @@ class VolumeTracingService @Inject()(
           zipResult
     } catch {
       case e: Exception =>
-        println(s"Error during processing for $tracingId: ${e.getMessage}")
         e.printStackTrace()
         Fox.failure(s"Processing failed due to an exception: ${e.getMessage}")
       }
