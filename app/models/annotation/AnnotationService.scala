@@ -400,6 +400,9 @@ class AnnotationService @Inject()(
       teamId <- selectSuitableTeam(user, dataset) ?~> "annotation.create.forbidden"
       annotation = Annotation(ObjectId.generate, datasetId, None, teamId, user._id, annotationLayers)
       _ <- annotationDAO.insertOne(annotation)
+      teamIdValidated = List(teamId)
+      _ <- Fox.serialCombined(teamIdsValidated)(teamDAO.findOne(_)) ?~> "updateSharedTeams.failed.accessingTeam"
+      _ <- this.updateTeamsForSharedAnnotation(annotation._id, teamIdValidated)
     } yield annotation
 
   def makeAnnotationHybrid(annotation: Annotation, organizationName: String, fallbackLayerName: Option[String])(
