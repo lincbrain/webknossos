@@ -1,6 +1,5 @@
 #!/bin/bash
-# crontab -e
-# 0 2 * * * /home/ec2-user/opt/webknossos/fossil_db_cron_backup.sh >> /home/ec2-user/opt/webknossos/backup.log 2>&1
+
 # Log file for debugging
 LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
 
@@ -8,8 +7,8 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
   echo "Starting backup at $(date +"%Y-%m-%d_%H-%M-%S")"
 
   # Set the environment variables
-  export AWS_ACCESS_KEY_ID=""
-  export AWS_SECRET_ACCESS_KEY=""
+  export AWS_ACCESS_KEY_ID="ACCESS_KEY"
+  export AWS_SECRET_ACCESS_KEY="SECRET_KEY"
   export AWS_DEFAULT_REGION="us-east-2"
 
   # Define the subdirectory to back up and the S3 bucket name
@@ -21,8 +20,8 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
   # Set the working directory to where docker-compose.yml is located
   cd /home/ec2-user/opt/webknossos
 
-  # Call the docker-compose step without TTY
-  /usr/local/bin/docker-compose run -T fossil-db-backup
+  # Call the docker-compose step without TTY -- detached state
+  /usr/local/bin/docker-compose up -d --no-deps --no-recreate fossil-db-backup
 
   if [ $? -ne 0 ]; then
     echo "Docker-compose step failed"
