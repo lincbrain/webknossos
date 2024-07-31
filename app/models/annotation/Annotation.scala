@@ -30,7 +30,7 @@ case class Annotation(
     _user: ObjectId,
     annotationLayers: List[AnnotationLayer],
     description: String = "",
-    visibility: AnnotationVisibility.Value = AnnotationVisibility.Public,
+    visibility: AnnotationVisibility.Value = AnnotationVisibility.Internal,
     name: String = "",
     viewConfiguration: Option[JsObject] = None,
     state: AnnotationState.Value = Active,
@@ -590,7 +590,7 @@ class AnnotationDAO @Inject()(sqlClient: SqlClient, annotationLayerDAO: Annotati
     } yield count
 
   // update operations
-
+  // Aaron
   def insertOne(a: Annotation): Fox[Unit] = {
     val insertAnnotationQuery = q"""
         INSERT INTO webknossos.annotations(_id, _dataset, _task, _team, _user, description, visibility,
