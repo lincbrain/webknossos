@@ -1,48 +1,51 @@
 #!/bin/bash
-# crontab -e
-# 0 2 * * * /home/ec2-user/opt/webknossos/postgres_backup.sh >> /home/ec2-user/opt/webknossos/backup.log 2>&1
+
 # Log file for debugging
-LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
+LOGFILE="/home/ec2-user/opt/webknossos/backup_postgres.log"
 
 {
-  echo "Starting backup at $(date +"%Y-%m-%d_%H-%M-%S")"
+  echo "Starting Postgres backup at $(date +"%Y-%m-%d_%H-%M-%S")"
 
   # Set the environment variables
-  export AWS_ACCESS_KEY_ID=""
-  export AWS_SECRET_ACCESS_KEY=""
-  export AWS_DEFAULT_REGION="us-east-2"
+  if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$AWS_DEFAULT_REGION" ] || [ -z "$S3_BUCKET" ]; then
+    echo "One or more required environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION, S3_BUCKET) are not set."
+    exit 1
+  fi
 
-  # Define the subdirectory to back up and the S3 bucket name
-  S3_BUCKET="linc-brain-mit-staging-us-east-2"
+  # Define the backup name and S3 bucket
   TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-  BACKUP_NAME="backup_$TIMESTAMP.tar.gz"
+  BACKUP_NAME="postgres_backup_$TIMESTAMP.sql.gz"
 
   # Set the working directory to where docker-compose.yml is located
   cd /home/ec2-user/opt/webknossos
 
-  # Call the docker-compose step without TTY
-  /usr/local/bin/docker-compose run -T postgres-backup
+  # Run the pg_dump command inside the postgres container
+  docker exec webknossos-postgres-1 /bin/bash -c "PGPASSWORD=postgres pg_dump -Fc -U postgres webknossos | gzip > /tmp/$BACKUP_NAME"
 
   if [ $? -ne 0 ]; then
-    echo "Docker-compose step failed"
+    echo "pg_dump command failed"
     exit 1
   fi
 
+  # Copy the backup file from the container to the host
+  docker cp webknossos-postgres-1:/tmp/$BACKUP_NAME /tmp/$BACKUP_NAME
+
   if [ $? -ne 0 ]; then
-    echo "Failed to create tar.gz archive"
+    echo "Failed to copy backup file from container"
     exit 1
   fi
 
   # Upload the backup to the S3 bucket
-  /usr/bin/aws s3 cp /home/ec2-user/opt/webknossos s3://$S3_BUCKET/postgres_backups/$BACKUP_NAME
+  /usr/bin/aws s3 cp /tmp/$BACKUP_NAME s3://$S3_BUCKET/postgres_backups/$BACKUP_NAME
 
   if [ $? -ne 0 ]; then
     echo "Failed to upload to S3"
     exit 1
   fi
 
-  # Clean up the temporary backup file
+  # Clean up the temporary backup file on the host and container
   /bin/rm /tmp/$BACKUP_NAME
+  docker exec webknossos-postgres-1 /bin/bash -c "rm /tmp/$BACKUP_NAME"
 
-  echo "Backup completed and uploaded to S3 at $(date +"%Y-%m-%d_%H-%M-%S")"
+  echo "Postgres backup completed and uploaded to S3 at $(date +"%Y-%m-%d_%H-%M-%S")"
 } >> $LOGFILE 2>&1

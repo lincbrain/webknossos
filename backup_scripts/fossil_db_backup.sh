@@ -7,20 +7,20 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
   echo "Starting backup at $(date +"%Y-%m-%d_%H-%M-%S")"
 
   # Set the environment variables
-  export AWS_ACCESS_KEY_ID="ACCESS_KEY"
-  export AWS_SECRET_ACCESS_KEY="SECRET_KEY"
-  export AWS_DEFAULT_REGION="us-east-2"
+  if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$AWS_DEFAULT_REGION" ] || [ -z "$S3_BUCKET" ]; then
+    echo "One or more required environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION, S3_BUCKET) are not set."
+    exit 1
+  fi
 
   # Define the subdirectory to back up and the S3 bucket name
   BACKUP_DIRECTORY="/home/ec2-user/opt/webknossos/persistent/fossildb/backup/private"
-  S3_BUCKET="linc-brain-mit-staging-us-east-2"
   TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
   BACKUP_NAME="backup_$TIMESTAMP.tar.gz"
 
   # Set the working directory to where docker-compose.yml is located
   cd /home/ec2-user/opt/webknossos
 
-  # Call the docker-compose step without TTY -- detached state
+  # Call the docker-compose step without TTY
   /usr/local/bin/docker-compose up -d --no-deps --no-recreate fossil-db-backup
 
   if [ $? -ne 0 ]; then

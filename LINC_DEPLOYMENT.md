@@ -51,7 +51,7 @@ sudo touch nginx.conf
 Next, you'll need to issue an SSL certificate directly on the server -- `certbot` is used here:
 
 ```shell
-sudo docker run --rm -p 80:80 -v $(pwd)/certs:/etc/letsencrypt -v $(pwd)/certs-data:/data/letsencrypt certbot/certbot certonly --standalone -d webknossos.lincbrain.org --email admin@lincbrain.org --agree-tos --non-interactive
+sudo docker run --rm -p 80:80 -v $(pwd)/certs:/etc/letsencrypt -v $(pwd)/certs-data:/data/letsencrypt certbot/certbot certonly --standalone -d webknossos-r5.lincbrain.org --email admin@lincbrain.org --agree-tos --non-interactive
 ```
 
 You'll need to next populate the nginx.conf -- replace `webknossos.lincbrain.org` with whatever A name you used in Route 53
