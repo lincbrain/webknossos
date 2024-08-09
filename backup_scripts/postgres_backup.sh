@@ -36,7 +36,7 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup_postgres.log"
   fi
 
   # Upload the backup to the S3 bucket
-  /usr/bin/aws s3 cp /tmp/$BACKUP_NAME s3://$S3_BUCKET/postgres_backups/$BACKUP_NAME
+  /usr/bin/aws s3 cp /tmp/$BACKUP_NAME s3://$S3_BUCKET/postgres_backups/$BACKUP_NAME --storage-class GLACIER
 
   if [ $? -ne 0 ]; then
     echo "Failed to upload to S3"
