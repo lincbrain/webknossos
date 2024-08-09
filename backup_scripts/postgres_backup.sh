@@ -7,10 +7,10 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup_postgres.log"
   echo "Starting Postgres backup at $(date +"%Y-%m-%d_%H-%M-%S")"
 
   # Set the environment variables
-  if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$AWS_DEFAULT_REGION" ] || [ -z "$S3_BUCKET" ]; then
-    echo "One or more required environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION, S3_BUCKET) are not set."
-    exit 1
-  fi
+  export AWS_ACCESS_KEY_ID=include-value-here
+  export AWS_SECRET_ACCESS_KEY=include-value-here
+  export AWS_DEFAULT_REGION=include-value-here
+  export S3_BUCKET=include-value-here
 
   # Define the backup name and S3 bucket
   TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")

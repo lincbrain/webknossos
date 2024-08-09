@@ -7,10 +7,10 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
   echo "Starting backup at $(date +"%Y-%m-%d_%H-%M-%S")"
 
   # Set the environment variables
-  if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$AWS_DEFAULT_REGION" ] || [ -z "$S3_BUCKET" ]; then
-    echo "One or more required environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION, S3_BUCKET) are not set."
-    exit 1
-  fi
+  export AWS_ACCESS_KEY_ID=include-value-here
+  export AWS_SECRET_ACCESS_KEY=include-value-here
+  export AWS_DEFAULT_REGION=include-value-here
+  export S3_BUCKET=include-value-here
 
   # Define the subdirectory to back up and the S3 bucket name
   BACKUP_DIRECTORY="/home/ec2-user/opt/webknossos/persistent/fossildb/backup/private"

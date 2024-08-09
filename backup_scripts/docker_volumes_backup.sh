@@ -7,10 +7,10 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
   echo "Starting backup at $(date +"%Y-%m-%d_%H-%M-%S")"
 
   # Set the environment variables
-  if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$AWS_DEFAULT_REGION" ] || [ -z "$S3_BUCKET" ]; then
-    echo "One or more required environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION, S3_BUCKET) are not set."
-    exit 1
-  fi
+    export AWS_ACCESS_KEY_ID=include-value-here
+    export AWS_SECRET_ACCESS_KEY=include-value-here
+    export AWS_DEFAULT_REGION=include-value-here
+    export S3_BUCKET=include-value-here
 
   # Define the directories to back up and the S3 bucket name
   BACKUP_DIRECTORY="/home/ec2-user/opt/webknossos"
@@ -20,7 +20,7 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
   BACKUP_NAME="backup_$TIMESTAMP.tar.gz"
 
   # Create a tar.gz archive of the specified directories
-  /bin/tar -cvf - -C $BACKUP_DIRECTORY binaryData persistent | xz -9 -c - > /tmp/$BACKUP_NAME
+  /bin/tar -czf /tmp/$BACKUP_NAME -C $BACKUP_DIRECTORY binaryData persistent
 
   if [ $? -ne 0 ]; then
     echo "Failed to create tar.gz archive"
