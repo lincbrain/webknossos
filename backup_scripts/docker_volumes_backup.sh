@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# Log file for debugging
+LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
+
+{
+  echo "Starting backup at $(date +"%Y-%m-%d_%H-%M-%S")"
+
+  # Set the environment variables
+  if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$AWS_DEFAULT_REGION" ] || [ -z "$S3_BUCKET" ]; then
+    echo "One or more required environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION, S3_BUCKET) are not set."
+    exit 1
+  fi
+
+  # Define the directories to back up and the S3 bucket name
+  BACKUP_DIRECTORY="/home/ec2-user/opt/webknossos"
+  BINARY_DATA_DIR="$BACKUP_DIRECTORY/binaryData"
+  PERSISTENT_DIR="$BACKUP_DIRECTORY/persistent"
+  TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+  BACKUP_NAME="backup_$TIMESTAMP.tar.gz"
+
+  # Create a tar.gz archive of the specified directories
+  /bin/tar -cvf - -C $BACKUP_DIRECTORY binaryData persistent | xz -9 -c - > /tmp/$BACKUP_NAME
+
+  if [ $? -ne 0 ]; then
+    echo "Failed to create tar.gz archive"
+    exit 1
+  fi
+
+  # Upload the backup to the S3 bucket
+  /usr/bin/aws s3 cp /tmp/$BACKUP_NAME s3://$S3_BUCKET/webknossos_backups/$BACKUP_NAME
+
+  if [ $? -ne 0 ]; then
+    echo "Failed to upload to S3"
+    exit 1
+  fi
+
+  # Clean up the temporary backup file
+  /bin/rm /tmp/$BACKUP_NAME
+
+  echo "Backup completed and uploaded to S3 at $(date +"%Y-%m-%d_%H-%M-%S")"
+} >> $LOGFILE 2>&1
