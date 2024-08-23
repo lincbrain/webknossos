@@ -6,7 +6,7 @@ This document is designed to help deploy a new version for LINC | WebKNOSSOS via
 
 Proceed to AWS and create an AWS Linux instance
 
-• m5.2xlarge is suggested for instance type
+• r5.2xlarge is suggested for instance type
 • x86_64 architecture is suggested
 • Ensure that ports 80 and 443 are available.
 • Ensure that the instance is reachable via Public IP address
@@ -51,7 +51,7 @@ sudo touch nginx.conf
 Next, you'll need to issue an SSL certificate directly on the server -- `certbot` is used here:
 
 ```shell
-sudo docker run --rm -p 80:80 -v $(pwd)/certs:/etc/letsencrypt -v $(pwd)/certs-data:/data/letsencrypt certbot/certbot certonly --standalone -d webknossos-r5.lincbrain.org --email admin@lincbrain.org --agree-tos --non-interactive
+sudo docker run --rm -p 80:80 -v $(pwd)/certs:/etc/letsencrypt -v $(pwd)/certs-data:/data/letsencrypt certbot/certbot certonly --standalone -d webknossos-backup.lincbrain.org --email admin@lincbrain.org --agree-tos --non-interactive
 ```
 
 You'll need to next populate the nginx.conf -- replace `webknossos.lincbrain.org` with whatever A name you used in Route 53
@@ -62,7 +62,7 @@ events {}
 http {
     server {
         listen 80;
-        server_name webknossos-staging.lincbrain.org;
+        server_name webknossos-backup.lincbrain.org;
 
         location /.well-known/acme-challenge/ {
             root /data/letsencrypt;
@@ -74,11 +74,11 @@ http {
     }
 
     server {
-        listen 443 ssl;
-        server_name webknossos-staging.lincbrain.org;
+        listen 443 ssl http2;
+        server_name webknossos-backup.lincbrain.org;
 
-        ssl_certificate /etc/letsencrypt/live/webknossos-staging.lincbrain.org/fullchain.pem;
-        ssl_certificate_key /etc/letsencrypt/live/webknossos-staging.lincbrain.org/privkey.pem;
+        ssl_certificate /etc/letsencrypt/live/webknossos-backup.lincbrain.org/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/webknossos-backup.lincbrain.org/privkey.pem;
 
         # webknossos-specific overrides: https://github.com/scalableminds/dockerfiles/blob/master/nginx-proxy/Dockerfile
         client_max_body_size 0;
@@ -177,6 +177,50 @@ Temp steps / commands for FossilDB backup:
 2. Grab `fossildb-client` via `docker pull scalableminds/fossildb-client:master`
 3. Determine the appropriate internal network that the `fossildb` instance is running in within the Dockerized setup on EC2: `docker inspect -f '{{range .NetworkSettings.Networks}}{{.NetworkID}} {{end}}' webknossos-fossildb-1`
 4. `docker run --network <network-id> scalableminds/fossildb-client:master webknossos-fossildb-1 backup` should create the backup
+5. The backup will be stored via `/home/ec2-user/opt/webknossos/persistent/fossildb/backup`
+
+## Creating a new WebKNOSSOS with pre-existing backups
+
+There are three different components that must be taken into account for a WebKNOSSOS clone:
+
+• mounted Docker volumes -- represented by the `binaryData` and `persistent` directories in the WebKNOSSOS file structure
+  - exported to AWS S3 via the `docker_volumes_backup.sh` cronjob script
+• FossilDB data (manged via `fossildb-client restore` commands)
+  - exported to AWS S3 via the `fossil_db_backup.sh` cronjob script
+• PostgresDB data (managed via `pg_dump` and `pg_restore` commands)
+  - exported to AWS S3 via the `postgres_backup.sh` cronjob script
+
+When setting up a new clone, first follow the standard deployment steps above, **however** do not create the `binraryData` folder
+
+You'll first want to restore the Docker volumes -- contained in the `webknosos_backups/` S3 subdirectory for wherever your cron jobs send the compressed backups
+
+Copy the appropriate assets from S3 to the EC2 instance via the `aws cp <backup-bucket> <current destination>`
+
+For example:
+
+```
+aws s3 cp s3://linc-brain-mit-staging-us-east-2/fossildb_backups/backup_2024-08-20_02-00-02.tar.gz ./backup_2024-08-20_02-00-02.tar.gz
+```
+
+Once you decompress (can use a tool like `gunzip`) and then extract the files -- (e.g. `tar -cvzf /home/ec2-user/opt/webknossos/webknossos_backup.tar.gz .`)
+you are ready to proceed; however, ensure that `persistent` and `binaryData` folders from the extracted files are in the same directory as your `docker-compose.yml` file
+
+Next, you want to restore the `fossildb` instance -- this can simply be done via the `docker-compose run fossil-db-restore` command
+
+Almost there! You'll next want to bring up the remainder of the WebKNOSSOS API (along with the nginx-proxy, postgres, etc.) via `docker-compose --env-file env.txt webknossos nginx-proxy`
+
+Notably, this will bring up the `postgres` container (however, we've yet to restore the container!). Thus you'll want to:
+  - Mount the decompressed, unpacked backup (should be something like `<backup_timestamp>.sql`). The mount command should be something similar to: `docker cp /local/path/to/postgres_backup.sql <container_id>:/tmp/postgres_backup.sql`
+  - Exec into the `postgres` container and open a `psql` shell
+  - Next, drop the `webknossos` database -- e.g. `DROP DATABASE webknossos`
+  - Create the database `webknossos` -- e.g. `CREATE DATABASE webknossos`
+  - Restore the database's state via psql -- e.g. `psql -U postgres -d webknossos -f /tmp/webknossos_backup.sql`
+
+Your clone should be all set now!
+
+
+
+
 
 
 
