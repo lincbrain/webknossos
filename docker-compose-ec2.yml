@@ -27,8 +27,6 @@ services:
     environment:
       - JAVA_OPTS=-Xmx48g -Xms24g
       - PUBLIC_HOST=webknossos-r5.lincbrain.org
-      - AWS_ACCESS_KEY=0+qXQJYrH3PhwLKyBQwBZeFqqVPj6PViUtoxW7ox
-      - AWS_ACCESS_KEY_ID=AKIASGOXNDXVTABD447Z
       - POSTGRES_URL=jdbc:postgresql://postgres/webknossos
       - VIRTUAL_HOST=${PUBLIC_HOST}
       - LETSENCRYPT_HOST=${PUBLIC_HOST}
