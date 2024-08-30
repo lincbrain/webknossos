@@ -4,7 +4,7 @@ services:
   # Production
   webknossos:
     build: .
-    image: lincbrain/webknossos:${DOCKER_TAG:-master}
+    image: lincbrain/webknossos:ak_dev__105
     ports:
       - "9000:9000"
     links:

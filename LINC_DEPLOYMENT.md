@@ -60,9 +60,10 @@ You'll need to next populate the nginx.conf -- replace `webknossos.lincbrain.org
 events {}
 
 http {
+    # Main server block for the webknossos application
     server {
         listen 80;
-        server_name webknossos-backup.lincbrain.org;
+        server_name webknossos-r5.lincbrain.org;
 
         location /.well-known/acme-challenge/ {
             root /data/letsencrypt;
@@ -75,12 +76,12 @@ http {
 
     server {
         listen 443 ssl http2;
-        server_name webknossos-backup.lincbrain.org;
+        server_name webknossos-r5.lincbrain.org;
 
-        ssl_certificate /etc/letsencrypt/live/webknossos-backup.lincbrain.org/fullchain.pem;
-        ssl_certificate_key /etc/letsencrypt/live/webknossos-backup.lincbrain.org/privkey.pem;
+        ssl_certificate /etc/letsencrypt/live/webknossos-r5.lincbrain.org/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/webknossos-r5.lincbrain.org/privkey.pem;
 
-        # webknossos-specific overrides: https://github.com/scalableminds/dockerfiles/blob/master/nginx-proxy/Dockerfile
+        # webknossos-specific overrides
         client_max_body_size 0;
         proxy_read_timeout 3600s;
 
@@ -97,7 +98,6 @@ http {
                 add_header 'Access-Control-Allow-Headers' 'Accept, Content-Type, X-Requested-With, Authorization, Cookie' always;
             }
 
-            # Handle preflight requests
             if ($request_method = 'OPTIONS') {
                 add_header 'Access-Control-Allow-Origin' "$http_origin" always;
                 add_header 'Access-Control-Allow-Credentials' 'true' always;
@@ -118,11 +118,24 @@ http {
             proxy_set_header Transfer-Encoding "";
             proxy_buffering off;
 
-            # Ensure no duplicate headers are set
             proxy_hide_header Access-Control-Allow-Origin;
             proxy_hide_header Access-Control-Allow-Credentials;
             proxy_hide_header Access-Control-Allow-Methods;
             proxy_hide_header Access-Control-Allow-Headers;
+        }
+    }
+
+    # Separate server block for serving the binaryData directory
+    server {
+        listen 8080;
+        server_name webknossos-r5.lincbrain.org;
+
+        location /binaryData/ {
+	    alias /home/ec2-user/opt/webknossos/binaryData/;
+            autoindex on;
+            autoindex_exact_size off;
+            autoindex_localtime on;
+            allow all;
         }
     }
 }
@@ -133,17 +146,19 @@ You'll next want to alter the `docker-compose` pulled earlier via `wget`
 Remove the `nginx-letsencrypt` service, and alter the `nginx` as such:
 
 ```
-  nginx-proxy:
-    image: nginx:latest
-    container_name: nginx-proxy
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./certs:/etc/letsencrypt
-    depends_on:
-      - webknossos
+nginx-proxy:
+  image: nginx:latest
+  container_name: nginx-proxy
+  ports:
+    - "8080:8080"
+    - "80:80"
+    - "443:443"
+  volumes:
+    - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    - ./certs:/etc/letsencrypt
+    - /home/ec2-user/opt/webknossos/binaryData:/home/ec2-user/opt/webknossos/binaryData:ro
+  depends_on:
+    - webknossos
 ```
 
 `nginx` should now be able to be called appropriately via HTTPS once `webknossos` API is running
