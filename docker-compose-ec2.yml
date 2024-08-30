@@ -35,6 +35,7 @@ services:
       - webknossos_default
     restart: always
 
+
   # Postgres
   postgres:
     image: postgres:15-bullseye
