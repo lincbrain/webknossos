@@ -26,7 +26,9 @@ services:
       - ./binaryData:/webknossos/binaryData
     environment:
       - JAVA_OPTS=-Xmx48g -Xms24g
-      - PUBLIC_HOST=webknossos-r5.lincbrain.org
+      - PUBLIC_HOST=webknossos.lincbrain.org
+      - AWS_ACCESS_KEY=0+asdasd
+      - AWS_ACCESS_KEY_ID=asdasd
       - POSTGRES_URL=jdbc:postgresql://postgres/webknossos
       - VIRTUAL_HOST=${PUBLIC_HOST}
       - LETSENCRYPT_HOST=${PUBLIC_HOST}
@@ -34,7 +36,6 @@ services:
     networks:
       - webknossos_default
     restart: always
-
 
   # Postgres
   postgres:
