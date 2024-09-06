@@ -7,10 +7,10 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
   echo "Starting backup at $(date +"%Y-%m-%d_%H-%M-%S")"
 
   # Set the environment variables
-  export AWS_ACCESS_KEY_ID=include-value-here
-  export AWS_SECRET_ACCESS_KEY=include-value-here
-  export AWS_DEFAULT_REGION=include-value-here
-  export S3_BUCKET=include-value-here
+  export AWS_ACCESS_KEY_ID=asd
+  export AWS_SECRET_ACCESS_KEY=asdaasd+jXGk30HhBrSh5Jpo0xLqxjiMDOIhgM
+  export AWS_DEFAULT_REGION=us-east-2
+  export S3_BUCKET=linc-brain-mit-staging-us-east-2
 
   # Define the subdirectory to back up and the S3 bucket name
   BACKUP_DIRECTORY="/home/ec2-user/opt/webknossos/persistent/fossildb/backup/private"
@@ -37,7 +37,7 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup.log"
   fi
 
   # Upload the backup to the S3 bucket
-  /usr/bin/aws s3 cp /tmp/$BACKUP_NAME s3://$S3_BUCKET/fossildb_backups/$BACKUP_NAME --storage-class GLACIER
+  /usr/bin/aws s3 cp /tmp/$BACKUP_NAME s3://$S3_BUCKET/fossildb_backups/$BACKUP_NAME
 
   if [ $? -ne 0 ]; then
     echo "Failed to upload to S3"

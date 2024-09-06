@@ -14,13 +14,13 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup_postgres.log"
 
   # Define the backup name and S3 bucket
   TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-  BACKUP_NAME="postgres_backup_$TIMESTAMP.sql.gz"
+  BACKUP_NAME="postgres_backup_$TIMESTAMP.dump"
 
   # Set the working directory to where docker-compose.yml is located
   cd /home/ec2-user/opt/webknossos
 
   # Run the pg_dump command inside the postgres container
-  docker exec webknossos-postgres-1 /bin/bash -c "PGPASSWORD=postgres pg_dump -Fc -U postgres webknossos | gzip > /tmp/$BACKUP_NAME"
+  docker exec webknossos-postgres-1 pg_dump -U postgres -F c -b -v -f /tmp/$BACKUP_NAME webknossos
 
   if [ $? -ne 0 ]; then
     echo "pg_dump command failed"
