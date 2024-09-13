@@ -7,14 +7,14 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup_postgres.log"
   echo "Starting Postgres backup at $(date +"%Y-%m-%d_%H-%M-%S")"
 
   # Set the environment variables
-  export AWS_ACCESS_KEY_ID=include-value-here
-  export AWS_SECRET_ACCESS_KEY=include-value-here
-  export AWS_DEFAULT_REGION=include-value-here
-  export S3_BUCKET=include-value-here
+  export AWS_ACCESS_KEY_ID=some-value
+  export AWS_SECRET_ACCESS_KEY=some-value
+  export AWS_DEFAULT_REGION=us-east-2
+  export S3_BUCKET=linc-brain-mit-prod-us-east-2
 
   # Define the backup name and S3 bucket
   TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-  BACKUP_NAME="postgres_backup_$TIMESTAMP.dump"
+  BACKUP_NAME="postgres_backup_dump_prod_$TIMESTAMP.sql"
 
   # Set the working directory to where docker-compose.yml is located
   cd /home/ec2-user/opt/webknossos
@@ -36,7 +36,7 @@ LOGFILE="/home/ec2-user/opt/webknossos/backup_postgres.log"
   fi
 
   # Upload the backup to the S3 bucket
-  /usr/bin/aws s3 cp /tmp/$BACKUP_NAME s3://$S3_BUCKET/postgres_backups/$BACKUP_NAME --storage-class GLACIER
+  /usr/bin/aws s3 cp /tmp/$BACKUP_NAME s3://$S3_BUCKET/postgres_backups/$BACKUP_NAME
 
   if [ $? -ne 0 ]; then
     echo "Failed to upload to S3"
