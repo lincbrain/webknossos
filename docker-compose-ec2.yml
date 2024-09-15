@@ -25,16 +25,14 @@ services:
     volumes:
       - ./binaryData:/webknossos/binaryData
     environment:
-      - JAVA_OPTS=-Xmx48g -Xms24g
-      - PUBLIC_HOST=webknossos.lincbrain.org
-      - AWS_ACCESS_KEY=0+asdasd
-      - AWS_ACCESS_KEY_ID=asdasd
+      - JAVA_OPTS=-Xmx64g -Xms32g
+      - PUBLIC_HOST=webknossos-r5-24xlarge.lincbrain.org
+      - AWS_ACCESS_KEY=0+qXQJYrH3PhwLKyBasdasdQwBZeFqqVPj6PViUtoxW7ox
+      - AWS_ACCESS_KEY_ID=AKIASGOXNDasdasdasdXVTABD447Z
       - POSTGRES_URL=jdbc:postgresql://postgres/webknossos
       - VIRTUAL_HOST=${PUBLIC_HOST}
       - LETSENCRYPT_HOST=${PUBLIC_HOST}
     user: "root"
-    networks:
-      - webknossos_default
     restart: always
 
   # Postgres
@@ -110,8 +108,8 @@ services:
       fossildb:
         condition: service_healthy
     command: ["webknossos-fossildb-1", "backup"]
-    networks:
-      - webknossos_default
+#    networks:
+#      - webknossos_default
 
   fossil-db-restore:
     image: scalableminds/fossildb-client:master
@@ -119,8 +117,8 @@ services:
       fossildb:
         condition: service_healthy
     command: ["webknossos-fossildb-1", "restore"]
-    networks:
-      - webknossos_default
+#    networks:
+#      - webknossos_default
 
   postgres-backup:
     image: postgres
@@ -131,6 +129,6 @@ services:
       - postgres
 
 # Explicitly declare networks for fossil-db-backup connectivity
-networks:
-  webknossos_default:
-    external: true
+#networks:
+#  webknossos_default:
+#    external: true

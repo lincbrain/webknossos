@@ -51,7 +51,7 @@ sudo touch nginx.conf
 Next, you'll need to issue an SSL certificate directly on the server -- `certbot` is used here:
 
 ```shell
-sudo docker run --rm -p 80:80 -v $(pwd)/certs:/etc/letsencrypt -v $(pwd)/certs-data:/data/letsencrypt certbot/certbot certonly --standalone -d webknossos.lincbrain.org --email admin@lincbrain.org --agree-tos --non-interactive
+sudo docker run --rm -p 80:80 -v $(pwd)/certs:/etc/letsencrypt -v $(pwd)/certs-data:/data/letsencrypt certbot/certbot certonly --standalone -d webknossos-r5-24xlarge.lincbrain.org --email admin@lincbrain.org --agree-tos --non-interactive
 ```
 
 You'll need to next populate the nginx.conf -- replace `webknossos.lincbrain.org` with whatever A name you used in Route 53
@@ -63,7 +63,7 @@ http {
     # Main server block for the webknossos application
     server {
         listen 80;
-        server_name webknossos.lincbrain.org;
+        server_name webknossos-r5-24xlarge.lincbrain.org;
 
         location /.well-known/acme-challenge/ {
             root /data/letsencrypt;
@@ -76,7 +76,7 @@ http {
 
     server {
         listen 443 ssl http2;
-        server_name webknossos.lincbrain.org;
+        server_name webknossos-r5-24xlarge.lincbrain.org;
 
         ssl_certificate /etc/letsencrypt/live/webknossos.lincbrain.org/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/webknossos.lincbrain.org/privkey.pem;
@@ -128,7 +128,7 @@ http {
     # Separate server block for serving the binaryData directory
     server {
         listen 8080;
-        server_name webknossos.lincbrain.org;
+        server_name webknossos-r5-24xlarge.lincbrain.org;
 
         location /binaryData/ {
 	    alias /home/ec2-user/opt/webknossos/binaryData/;
