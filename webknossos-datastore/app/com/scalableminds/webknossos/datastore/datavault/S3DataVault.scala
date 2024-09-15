@@ -1,31 +1,31 @@
 package com.scalableminds.webknossos.datastore.datavault
 
-import com.amazonaws.AmazonServiceException
-import com.amazonaws.auth.{
-  AWSCredentialsProvider,
-  AWSStaticCredentialsProvider,
-  AnonymousAWSCredentials,
-  BasicAWSCredentials,
-  EnvironmentVariableCredentialsProvider
-}
-import com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration
-import com.amazonaws.regions.Regions
-import com.amazonaws.services.s3.{AmazonS3, AmazonS3ClientBuilder}
-import com.amazonaws.services.s3.model.{GetObjectRequest, S3Object}
-import com.amazonaws.util.AwsHostNameUtils
 import com.scalableminds.util.tools.Fox
 import com.scalableminds.webknossos.datastore.storage.{
   LegacyDataVaultCredential,
   RemoteSourceDescriptor,
   S3AccessKeyCredential
 }
-import net.liftweb.common.{Box, Failure, Full}
-import org.apache.commons.io.IOUtils
+import net.liftweb.common.{Box, Failure, Full, Empty}
 import org.apache.commons.lang3.builder.HashCodeBuilder
+import software.amazon.awssdk.auth.credentials.{
+  AwsBasicCredentials,
+  AwsCredentialsProvider,
+  DefaultCredentialsProvider,
+  StaticCredentialsProvider
+}
+import software.amazon.awssdk.core.async.AsyncResponseTransformer
+import software.amazon.awssdk.core.ResponseBytes
+import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.s3.S3AsyncClient
+import software.amazon.awssdk.services.s3.model._
 
 import java.net.URI
+import java.util.concurrent.CompletableFuture
 import scala.collection.immutable.NumericRange
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
+import scala.jdk.FutureConverters._
+//import scala.util.{Failure => ScalaFailure, Success}
 
 class S3DataVault(s3AccessKeyCredential: Option[S3AccessKeyCredential], uri: URI) extends DataVault {
   private lazy val bucketName = S3DataVault.hostBucketFromUri(uri) match {
@@ -33,48 +33,41 @@ class S3DataVault(s3AccessKeyCredential: Option[S3AccessKeyCredential], uri: URI
     case None        => throw new Exception(s"Could not parse S3 bucket for ${uri.toString}")
   }
 
-  private lazy val client: AmazonS3 =
-    S3DataVault.getAmazonS3Client(s3AccessKeyCredential, uri)
+  private lazy val client: S3AsyncClient = S3DataVault.getAmazonS3Client(s3AccessKeyCredential, uri)
 
   private def getRangeRequest(bucketName: String, key: String, range: NumericRange[Long]): GetObjectRequest =
-    new GetObjectRequest(bucketName, key).withRange(range.start, range.end)
+    GetObjectRequest.builder().bucket(bucketName).key(key).range(s"bytes=${range.start}-${range.end}").build()
 
   private def getSuffixRangeRequest(bucketName: String, key: String, length: Long): GetObjectRequest = {
-    val req = new GetObjectRequest(bucketName, key)
-    // Suffix length range request is not supported by aws sdk
-    // see https://github.com/aws/aws-sdk-java/issues/1551#issuecomment-382540551 for this workaround
-    req.setRange(0) // Disable MD5 checksum, which fails on partial reads
-    req.putCustomRequestHeader("Range", s"bytes=-$length")
-    req
+    GetObjectRequest.builder().bucket(bucketName).key(key).range(s"bytes=-$length").build()
   }
 
-  private def getRequest(bucketName: String, key: String): GetObjectRequest = new GetObjectRequest(bucketName, key)
+  private def getRequest(bucketName: String, key: String): GetObjectRequest =
+    GetObjectRequest.builder().bucket(bucketName).key(key).build()
 
   private def performRequest(request: GetObjectRequest)(implicit ec: ExecutionContext): Fox[(Array[Byte], String)] = {
-    var s3objectRef: Option[S3Object] = None // Used for cleanup later (possession of a S3Object requires closing it)
-    try {
-      val s3object = client.getObject(request)
-      s3objectRef = Some(s3object)
-      val bytes = IOUtils.toByteArray(s3object.getObjectContent)
-      val encodingStr = Option(s3object.getObjectMetadata.getContentEncoding).getOrElse("")
-      Fox.successful(bytes, encodingStr)
-    } catch {
-      case e: AmazonServiceException =>
-        e.getStatusCode match {
-          case 404 => Fox.empty
-          case _   => Fox.failure(e.getMessage)
-        }
-      case e: Exception => Fox.failure(e.getMessage)
-    } finally {
-      s3objectRef match {
-        case Some(obj) => obj.close()
-        case None      =>
-      }
+    val responseFuture: CompletableFuture[ResponseBytes[GetObjectResponse]] = client.getObject(request, AsyncResponseTransformer.toBytes())
+    val scalaFuture: Future[ResponseBytes[GetObjectResponse]] = responseFuture.asScala
+
+    val resultFuture = scalaFuture.map { response =>
+      val bytes = response.asByteArray()
+      val encodingStr = Option(response.response().contentEncoding()).getOrElse("")
+      (bytes, encodingStr)
+    }.recover {
+      case e: S3Exception if e.statusCode() == 404 => (Array.emptyByteArray, "")
+      case e: Exception => throw e
     }
+
+    futureToFox(resultFuture)
+  }
+
+  private def futureToFox[T](future: Future[T])(implicit ec: ExecutionContext): Fox[T] = {
+    val boxFuture: Future[Box[T]] = future.map(Full(_)).recover { case e => Failure(e.getMessage, Full(e), Empty) }
+    new Fox(boxFuture)
   }
 
   override def readBytesAndEncoding(path: VaultPath, range: RangeSpecifier)(
-      implicit ec: ExecutionContext): Fox[(Array[Byte], Encoding.Value)] =
+    implicit ec: ExecutionContext): Fox[(Array[Byte], Encoding.Value)] =
     for {
       objectKey <- Fox.box2Fox(S3DataVault.objectKeyFromUri(path.toUri))
       request = range match {
@@ -143,41 +136,29 @@ object S3DataVault {
       Full(uri.getPath.tail)
     } else Failure(s"Not a valid s3 uri: $uri")
 
-  private def getCredentialsProvider(credentialOpt: Option[S3AccessKeyCredential]): AWSCredentialsProvider =
+  private def getCredentialsProvider(credentialOpt: Option[S3AccessKeyCredential]): AwsCredentialsProvider =
     credentialOpt match {
       case Some(s3AccessKeyCredential: S3AccessKeyCredential) =>
-        new AWSStaticCredentialsProvider(
-          new BasicAWSCredentials(s3AccessKeyCredential.accessKeyId, s3AccessKeyCredential.secretAccessKey))
-      case None if sys.env.contains("AWS_ACCESS_KEY_ID") || sys.env.contains("AWS_ACCESS_KEY") =>
-        new EnvironmentVariableCredentialsProvider
+        StaticCredentialsProvider.create(
+          AwsBasicCredentials.create(s3AccessKeyCredential.accessKeyId, s3AccessKeyCredential.secretAccessKey))
       case None =>
-        new AnonymousAWSCredentialsProvider
+        DefaultCredentialsProvider.create()
     }
+
+  private def getAmazonS3Client(credentialOpt: Option[S3AccessKeyCredential], uri: URI): S3AsyncClient = {
+    val builder = S3AsyncClient.builder()
+      .credentialsProvider(getCredentialsProvider(credentialOpt))
+
+    if (isNonAmazonHost(uri)) {
+      builder.endpointOverride(uri)
+      builder.region(Region.US_EAST_2)  // Default region for non-Amazon hosts, change if necessary
+    } else {
+      builder.region(Region.US_EAST_2)
+    }
+
+    builder.build()
+  }
 
   private def isNonAmazonHost(uri: URI): Boolean =
     isPathStyle(uri) && !uri.getHost.endsWith(".amazonaws.com")
-
-  private def getAmazonS3Client(credentialOpt: Option[S3AccessKeyCredential], uri: URI): AmazonS3 = {
-    val basic = AmazonS3ClientBuilder.standard
-      .withCredentials(getCredentialsProvider(credentialOpt))
-      .withForceGlobalBucketAccessEnabled(true)
-    if (isNonAmazonHost(uri))
-      basic
-        .withPathStyleAccessEnabled(true)
-        .withEndpointConfiguration(
-          new EndpointConfiguration(
-            s"http://${uri.getAuthority}",
-            AwsHostNameUtils.parseRegion(uri.getAuthority, "s3")
-          )
-        )
-        .build()
-    else basic.withRegion(Regions.DEFAULT_REGION).build()
-  }
-
-}
-
-class AnonymousAWSCredentialsProvider extends AWSCredentialsProvider {
-  override def getCredentials = new AnonymousAWSCredentials
-
-  override def refresh(): Unit = {}
 }
