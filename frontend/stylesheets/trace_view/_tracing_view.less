@@ -52,13 +52,8 @@
   position: relative;
 }
 #TDViewControls {
-  text-align: right;
-  height: 20px;
-  position: absolute;
-  top: 0px;
-  z-index: 30;
-  width: 100%;
-  display: inline-block;
+  display: flex;
+  justify-content: end;
 
   .ant-btn {
     line-height: 23px;
@@ -70,7 +65,6 @@
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      margin-right: 5px;
     }
     &:nth-child(2) .colored-dot {
       background-color: var(--color-xy-viewport);
@@ -502,7 +496,7 @@ img.keyboard-mouse-icon:first-child {
   // on mobile does not work or the icon bleeds some white background
   // into the top navbar.
   z-index: 999;
-  color: var(--ant-color-text)-secondary;
+  color: var(--ant-color-text-secondary);
   i {
     font-size: 15px !important;
     margin: 0;
@@ -606,4 +600,16 @@ img.keyboard-mouse-icon:first-child {
   /* The context menu needs a higher z-value than flexlayout__tab_button_content.
      Otherwise the tab title covers the context menu. */
   z-index: 110;
+}
+
+.segment-list-context-menu-overlay {
+  // The parent has a padding of 10px on all sides which we need to subtract here.
+  width: calc(100% - 20px) !important;
+  height: calc(100% - 20px) !important;
+}
+
+
+#main-tooltip {
+  max-width: 250px;
+  font-size: 14px;
 }

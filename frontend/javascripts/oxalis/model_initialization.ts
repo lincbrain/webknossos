@@ -95,7 +95,7 @@ import Toast from "libs/toast";
 import type { PartialUrlManagerState, UrlStateByLayer } from "oxalis/controller/url_manager";
 import UrlManager from "oxalis/controller/url_manager";
 import * as Utils from "libs/utils";
-import constants, { ControlModeEnum, AnnotationToolEnum, Vector3 } from "oxalis/constants";
+import constants, { ControlModeEnum, AnnotationToolEnum, type Vector3 } from "oxalis/constants";
 import messages from "messages";
 import {
   setActiveConnectomeAgglomerateIdsAction,
@@ -251,7 +251,7 @@ async function fetchEditableMappings(
   serverVolumeTracings: ServerVolumeTracing[],
 ): Promise<ServerEditableMapping[]> {
   const promises = serverVolumeTracings
-    .filter((tracing) => tracing.mappingIsEditable)
+    .filter((tracing) => tracing.hasEditableMapping)
     .map((tracing) => getEditableMappingInfo(tracingStoreUrl, tracing.id));
   return Promise.all(promises);
 }

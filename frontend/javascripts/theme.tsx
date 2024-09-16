@@ -1,7 +1,8 @@
-import React, { useEffect } from "react";
+import type React from "react";
+import { useEffect } from "react";
 import { useSelector } from "react-redux";
 import { App, ConfigProvider, theme } from "antd";
-import { APIUser } from "types/api_flow_types";
+import type { APIUser } from "types/api_flow_types";
 import window from "libs/window";
 import type { OxalisState, Theme } from "oxalis/store";
 import type { AliasToken, OverrideToken } from "antd/lib/theme/interface";
@@ -40,6 +41,8 @@ export function getAntdTheme(userTheme: Theme) {
     Tree: {
       colorBgContainer: "transparent",
       directoryNodeSelectedBg: ColorWKBlue,
+      titleHeight: 20, // default is 24px,
+      marginXXS: 2, // default is 4px; adjust to match checkboxes because of smaller titleHeight
     },
   };
 
@@ -57,6 +60,11 @@ export function getAntdTheme(userTheme: Theme) {
 
   if (userTheme === "dark") {
     algorithm = theme.darkAlgorithm;
+    components.Tree = {
+      ...components.Tree,
+      nodeSelectedBg: ColorWKBlue,
+      nodeHoverBg: ColorWKDarkGrey,
+    };
   }
   return { algorithm, token: globalDesignToken, components };
 }
