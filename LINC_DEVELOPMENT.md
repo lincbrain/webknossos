@@ -29,9 +29,9 @@ webknossos help
 ```
 
 You'll need to set your authentication token as an env var `WK_TOKEN`: go to https://webknossos.lincbrain.org/auth/token 
-(or https://webknossos-staging.lincbrain.org/auth/token if you are on staging)
+(or https://webknossos.lincbrain.org/auth/token if you are on staging)
 
 ### Temp Links
 
-https://webknossos-staging.lincbrain.org/api/v5/user/annotations
+https://webknossos.lincbrain.org/api/v5/user/annotations
 
