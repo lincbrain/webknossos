@@ -1,4 +1,5 @@
-# Example crontab values that will run each backup at 5PM EST
-0 21 * * * /home/ec2-user/opt/webknossos/backup_fossildb_prod.sh
-0 21 * * * /home/ec2-user/opt/webknossos/backup_postgres_prod.sh
-0 21 * * * /home/ec2-user/opt/webknossos/backup_docker_volumes_prod.sh
+# Example crontab values that will run each backup at 9AM EST
+@reboot /bin/bash /home/ec2-user/opt/webknossos/on_startup.sh >> /home/ec2-user/opt/webknossos/startup_script.log 2>&1
+0 14 * * * /home/ec2-user/opt/webknossos/backup_fossildb_prod.sh
+0 14 * * * /home/ec2-user/opt/webknossos/backup_postgres_prod.sh
+0 14 * * * /home/ec2-user/opt/webknossos/backup_docker_volumes_prod.sh
