@@ -1699,6 +1699,7 @@ export const getTracingStoreCached = _.memoize(getTracingstore);
 
 // ### Active User
 export function getActiveUser(options?: RequestOptions): Promise<APIUser> {
+  console.log(options)
   return Request.receiveJSON("/api/user", options);
 }
 

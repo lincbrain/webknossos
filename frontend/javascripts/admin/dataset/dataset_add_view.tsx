@@ -75,17 +75,17 @@ function DatasetAddView({ history }: RouteComponentProps) {
     : DatasetAddType.UPLOAD;
 
   const tabs: TabsProps["items"] = [
-    {
-      label: "Upload Dataset",
-      icon: <UploadOutlined />,
-      key: DatasetAddType.UPLOAD,
-      children: (
-        <DatasetUploadView
-          datastores={datastores}
-          onUploaded={handleDatasetAdded.bind(null, DatasetAddType.UPLOAD)}
-        />
-      ),
-    },
+    // {
+    //   label: "Upload Dataset",
+    //   icon: <UploadOutlined />,
+    //   key: DatasetAddType.UPLOAD,
+    //   children: (
+    //     <DatasetUploadView
+    //       datastores={datastores}
+    //       onUploaded={handleDatasetAdded.bind(null, DatasetAddType.UPLOAD)}
+    //     />
+    //   ),
+    // },
     {
       icon: <DatabaseOutlined />,
       label: "Add Remote Dataset",
@@ -97,17 +97,17 @@ function DatasetAddView({ history }: RouteComponentProps) {
         />
       ),
     },
-    {
-      icon: <CopyOutlined />,
-      label: "Compose From Existing Datasets",
-      key: DatasetAddType.COMPOSE,
-      children: (
-        <DatasetAddComposeView
-          datastores={datastores}
-          onAdded={handleDatasetAdded.bind(null, DatasetAddType.COMPOSE)}
-        />
-      ),
-    },
+    // {
+    //   icon: <CopyOutlined />,
+    //   label: "Compose From Existing Datasets",
+    //   key: DatasetAddType.COMPOSE,
+    //   children: (
+    //     <DatasetAddComposeView
+    //       datastores={datastores}
+    //       onAdded={handleDatasetAdded.bind(null, DatasetAddType.COMPOSE)}
+    //     />
+    //   ),
+    // },
   ];
 
   return (
@@ -181,18 +181,23 @@ const alignBanner = (
         width: "100%",
       }}
     />
-    <Button
-      href="https://webknossos.org/services/alignment"
-      target="_blank"
-      rel="noopener noreferrer"
-      style={{
-        display: "block",
-        margin: "10px auto",
-        width: "50%",
-      }}
-    >
-      Learn More
-    </Button>
+    <p>
+      <a
+        href="https://docs.webknossos.org/webknossos/automated_analysis.html"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Single-tile alignment
+      </a>{" "}
+      of image stacks can be done directly in WEBKNOSSOS.
+    </p>
+    <p>
+      For multi-tile stacks, learn about our{" "}
+      <a href="https://webknossos.org/services/alignment" target="_blank" rel="noopener noreferrer">
+        alignment service
+      </a>
+      .
+    </p>
   </div>
 );
 const manualAnnotationBanner = (
@@ -298,12 +303,11 @@ const getPostUploadModal = (
         }}
       >
         The dataset was {addTypeToVerb[datasetAddType]} successfully
-        {datasetNeedsConversion ? " and a conversion job was started." : null}.
+        {datasetNeedsConversion ? " and a conversion job was started" : null}.
         <br />
         <div
           style={{
             display: "flex",
-            justifyContent: "center",
           }}
         >
           <div
