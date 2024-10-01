@@ -31,8 +31,11 @@ function LoginView({ history, redirect }: Props) {
     <Row justify="center" align="middle" className="login-view">
       <Col xs={22} sm={20} md={16} lg={12} xl={8}>
         <Card className="login-content" style={{ margin: "0 auto" }}>
-          <h3>Login</h3>
-          <LoginForm layout="horizontal" onLoggedIn={onLoggedIn} />
+          <h5>WebKNOSSOS for <a href="https://connects.mgh.harvard.edu/">LINC</a>  is accessible only to approved users</h5>
+          <br></br>
+          <h5>Webknossos can be accessed by selecting the Webknossos links on the <a href="https://lincbrain.org">LINC Data Platform</a> homepage
+            or in the file browser next to each asset</h5>
+          {/*<LoginForm layout="horizontal" onLoggedIn={onLoggedIn} />*/}
         </Card>
       </Col>
     </Row>
