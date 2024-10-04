@@ -518,6 +518,7 @@ function AddRemoteLayer({
     const datasourceConfigStr = form.getFieldValue("dataSourceJson");
     console.log(uploadableDatastores);
     console.log(form);
+    console.log(form.getFieldValue("datastoreUrl"));
     const datastoreToUse = uploadableDatastores.find(
       (datastore) => form.getFieldValue("datastoreUrl") === datastore.url,
     );
