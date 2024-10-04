@@ -276,6 +276,7 @@ function DatasetAddRemoteView(props: Props) {
     const datastoreToUse = uploadableDatastores.find(
       (datastore) => form.getFieldValue("datastoreUrl") === datastore.url,
     );
+    console.log(uploadableDatastores)
     console.log(datastoreToUse)
     console.log("Aaron")
     console.log(form)
