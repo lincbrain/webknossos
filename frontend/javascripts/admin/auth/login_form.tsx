@@ -1,7 +1,6 @@
 import { Alert, Button, Form, Input } from "antd";
 import { LockOutlined, MailOutlined } from "@ant-design/icons";
 import { Link } from "react-router-dom";
-import React from "react";
 import { getIsInIframe } from "libs/utils";
 import { loginUser, requestSingleSignOnLogin } from "admin/admin_rest_api";
 import { setActiveUserAction } from "oxalis/model/actions/user_actions";
@@ -68,102 +67,102 @@ function LoginForm({ layout, onLoggedIn, hideFooter, style }: Props) {
   return (
     <div style={style || DEFAULT_STYLE}>
       {iframeWarning}
-      {/*<Form onFinish={onFinish} layout={layout} form={form}>*/}
-      {/*  <FormItem*/}
-      {/*    name="email"*/}
-      {/*    rules={[*/}
-      {/*      {*/}
-      {/*        required: true,*/}
-      {/*        type: "email",*/}
-      {/*        message: messages["auth.registration_email_input"],*/}
-      {/*      },*/}
-      {/*    ]}*/}
-      {/*  >*/}
-      {/*    <Input*/}
-      {/*      size="large"*/}
-      {/*      prefix={*/}
-      {/*        <MailOutlined*/}
-      {/*          style={{*/}
-      {/*            fontSize: 13,*/}
-      {/*          }}*/}
-      {/*        />*/}
-      {/*      }*/}
-      {/*      placeholder="Email"*/}
-      {/*    />*/}
-      {/*  </FormItem>*/}
-      {/*  <FormItem*/}
-      {/*    name="password"*/}
-      {/*    rules={[*/}
-      {/*      {*/}
-      {/*        required: true,*/}
-      {/*        message: messages["auth.registration_password_input"],*/}
-      {/*      },*/}
-      {/*    ]}*/}
-      {/*  >*/}
-      {/*    <Password*/}
-      {/*      size="large"*/}
-      {/*      prefix={*/}
-      {/*        <LockOutlined*/}
-      {/*          style={{*/}
-      {/*            fontSize: 13,*/}
-      {/*          }}*/}
-      {/*        />*/}
-      {/*      }*/}
-      {/*      placeholder="Password"*/}
-      {/*    />*/}
-      {/*  </FormItem>*/}
-      {/*  <div style={{ display: "flex", justifyContent: "space-around", gap: 12 }}>*/}
-      {/*    <FormItem style={{ flexGrow: 1 }}>*/}
-      {/*      <Button*/}
-      {/*        type="primary"*/}
-      {/*        htmlType="submit"*/}
-      {/*        style={{*/}
-      {/*          width: "100%",*/}
-      {/*        }}*/}
-      {/*      >*/}
-      {/*        Log in*/}
-      {/*      </Button>*/}
-      {/*    </FormItem>*/}
-      {/*    {openIdConnectEnabled && (*/}
-      {/*      <FormItem style={{ flexGrow: 1 }}>*/}
-      {/*        <Button*/}
-      {/*          style={{*/}
-      {/*            width: "100%",*/}
-      {/*          }}*/}
-      {/*          onClick={async () => {*/}
-      {/*            const res = await requestSingleSignOnLogin();*/}
-      {/*            window.location.href = res.redirect_url;*/}
-      {/*          }}*/}
-      {/*        >*/}
-      {/*          Log in with SSO*/}
-      {/*        </Button>*/}
-      {/*      </FormItem>*/}
-      {/*    )}*/}
-      {/*  </div>*/}
-      {/*  {hideFooter ? null : (*/}
-      {/*    <FormItem*/}
-      {/*      style={{*/}
-      {/*        marginBottom: 4,*/}
-      {/*      }}*/}
-      {/*    >*/}
-      {/*      <div*/}
-      {/*        style={{*/}
-      {/*          display: "flex",*/}
-      {/*        }}*/}
-      {/*      >*/}
-      {/*        <Link*/}
-      {/*          to="/auth/signup"*/}
-      {/*          style={{ ...linkStyle, marginRight: 10, flexGrow: 1, whiteSpace: "nowrap" }}*/}
-      {/*        >*/}
-      {/*          Register Now*/}
-      {/*        </Link>*/}
-      {/*        <Link to="/auth/resetPassword" style={{ ...linkStyle, whiteSpace: "nowrap" }}>*/}
-      {/*          Forgot Password*/}
-      {/*        </Link>*/}
-      {/*      </div>*/}
-      {/*    </FormItem>*/}
-      {/*  )}*/}
-      {/*</Form>*/}
+      <Form onFinish={onFinish} layout={layout} form={form}>
+        <FormItem
+          name="email"
+          rules={[
+            {
+              required: true,
+              type: "email",
+              message: messages["auth.registration_email_input"],
+            },
+          ]}
+        >
+          <Input
+            size="large"
+            prefix={
+              <MailOutlined
+                style={{
+                  fontSize: 13,
+                }}
+              />
+            }
+            placeholder="Email"
+          />
+        </FormItem>
+        <FormItem
+          name="password"
+          rules={[
+            {
+              required: true,
+              message: messages["auth.registration_password_input"],
+            },
+          ]}
+        >
+          <Password
+            size="large"
+            prefix={
+              <LockOutlined
+                style={{
+                  fontSize: 13,
+                }}
+              />
+            }
+            placeholder="Password"
+          />
+        </FormItem>
+        <div style={{ display: "flex", justifyContent: "space-around", gap: 12 }}>
+          <FormItem style={{ flexGrow: 1 }}>
+            <Button
+              type="primary"
+              htmlType="submit"
+              style={{
+                width: "100%",
+              }}
+            >
+              Log in
+            </Button>
+          </FormItem>
+          {openIdConnectEnabled && (
+            <FormItem style={{ flexGrow: 1 }}>
+              <Button
+                style={{
+                  width: "100%",
+                }}
+                onClick={async () => {
+                  const res = await requestSingleSignOnLogin();
+                  window.location.href = res.redirect_url;
+                }}
+              >
+                Log in with SSO
+              </Button>
+            </FormItem>
+          )}
+        </div>
+        {hideFooter ? null : (
+          <FormItem
+            style={{
+              marginBottom: 4,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+              }}
+            >
+              <Link
+                to="/auth/signup"
+                style={{ ...linkStyle, marginRight: 10, flexGrow: 1, whiteSpace: "nowrap" }}
+              >
+                Register Now
+              </Link>
+              <Link to="/auth/resetPassword" style={{ ...linkStyle, whiteSpace: "nowrap" }}>
+                Forgot Password
+              </Link>
+            </div>
+          </FormItem>
+        )}
+      </Form>
     </div>
   );
 }

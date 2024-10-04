@@ -63,7 +63,7 @@ export default function AuthenticationModal({
         </React.Fragment>
       ) : (
         <React.Fragment>
-          <LoginForm layout="vertical" onLoggedIn={() => onLoggedIn(false)} hideFooter />
+          {/*<LoginForm layout="vertical" onLoggedIn={() => onLoggedIn(false)} hideFooter />*/}
           <LinkButton onClick={showRegister}>
             Don&apos;t have an account yet? Register here.
           </LinkButton>
