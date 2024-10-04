@@ -276,6 +276,9 @@ function DatasetAddRemoteView(props: Props) {
     const datastoreToUse = uploadableDatastores.find(
       (datastore) => form.getFieldValue("datastoreUrl") === datastore.url,
     );
+    console.log(datastoreToUse)
+    console.log("Aaron")
+    console.log(form)
     if (!datastoreToUse) {
       setShowLoadingOverlay(false);
       Toast.error("Could not find datastore that allows uploading.");
