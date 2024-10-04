@@ -512,6 +512,8 @@ function AddRemoteLayer({
     // Sync simple with advanced and get newest datasourceJson
     syncDataSourceFields(form, dataSourceEditMode === "simple" ? "advanced" : "simple");
     const datasourceConfigStr = form.getFieldValue("dataSourceJson");
+    console.log(uploadableDatastores);
+    console.log(form);
     const datastoreToUse = uploadableDatastores.find(
       (datastore) => form.getFieldValue("datastoreUrl") === datastore.url,
     );
@@ -553,7 +555,7 @@ function AddRemoteLayer({
             preferredVoxelSize,
           );
         }
-      }
+      } // Aaron
       return exploreRemoteDataset([datasourceUrl], datastoreToUse.name, null, preferredVoxelSize);
     })();
     setExploreLog(report);
