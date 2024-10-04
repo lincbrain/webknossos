@@ -15,10 +15,10 @@ WORKDIR /webknossos
 # Setup user and group
 RUN addgroup --system --gid 999 webknossos \
   && adduser --system --uid 999 --ingroup webknossos webknossos \
-  && chown -R webknossos . \
-  && chmod go+x bin/webknossos \
-  && chmod go+w .
-
+  && mkdir disk \
+  && chown -R webknossos:webknossos . \
+  && chmod -R go+rwx . \
+    
 
 # Create a custom entrypoint
 RUN echo '#!/bin/bash\numask 000\nbin/webknossos "$@"\n' > /docker-entrypoint.sh \
