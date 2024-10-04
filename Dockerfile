@@ -17,8 +17,7 @@ RUN addgroup --system --gid 999 webknossos \
   && adduser --system --uid 999 --ingroup webknossos webknossos \
   && mkdir disk \
   && chown -R webknossos:webknossos . \
-  && chmod -R go+rwx . \
-    
+  && chmod -R go+rwx .
 
 # Create a custom entrypoint
 RUN echo '#!/bin/bash\numask 000\nbin/webknossos "$@"\n' > /docker-entrypoint.sh \
