@@ -75,17 +75,17 @@ function DatasetAddView({ history }: RouteComponentProps) {
     : DatasetAddType.UPLOAD;
 
   const tabs: TabsProps["items"] = [
-    // {
-    //   label: "Upload Dataset",
-    //   icon: <UploadOutlined />,
-    //   key: DatasetAddType.UPLOAD,
-    //   children: (
-    //     <DatasetUploadView
-    //       datastores={datastores}
-    //       onUploaded={handleDatasetAdded.bind(null, DatasetAddType.UPLOAD)}
-    //     />
-    //   ),
-    // },
+    {
+      label: "Upload Dataset",
+      icon: <UploadOutlined />,
+      key: DatasetAddType.UPLOAD,
+      children: (
+        <DatasetUploadView
+          datastores={datastores}
+          onUploaded={handleDatasetAdded.bind(null, DatasetAddType.UPLOAD)}
+        />
+      ),
+    },
     {
       icon: <DatabaseOutlined />,
       label: "Add Remote Dataset",
@@ -97,17 +97,17 @@ function DatasetAddView({ history }: RouteComponentProps) {
         />
       ),
     },
-    // {
-    //   icon: <CopyOutlined />,
-    //   label: "Compose From Existing Datasets",
-    //   key: DatasetAddType.COMPOSE,
-    //   children: (
-    //     <DatasetAddComposeView
-    //       datastores={datastores}
-    //       onAdded={handleDatasetAdded.bind(null, DatasetAddType.COMPOSE)}
-    //     />
-    //   ),
-    // },
+    {
+      icon: <CopyOutlined />,
+      label: "Compose From Existing Datasets",
+      key: DatasetAddType.COMPOSE,
+      children: (
+        <DatasetAddComposeView
+          datastores={datastores}
+          onAdded={handleDatasetAdded.bind(null, DatasetAddType.COMPOSE)}
+        />
+      ),
+    },
   ];
 
   return (
