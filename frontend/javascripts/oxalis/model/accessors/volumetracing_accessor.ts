@@ -214,11 +214,11 @@ const MAG_THRESHOLDS_FOR_ZOOM: Partial<Record<AnnotationTool, number>> = {
   // Note that these are relative to the lowest existing resolution index.
   // A threshold of 1 indicates that the respective tool can be used in the
   // lowest existing resolution as well as the next highest one.
-  [AnnotationToolEnum.TRACE]: 8,
-  [AnnotationToolEnum.ERASE_TRACE]: 8,
-  [AnnotationToolEnum.BRUSH]: 8,
-  [AnnotationToolEnum.ERASE_BRUSH]: 8,
-  [AnnotationToolEnum.FILL_CELL]: 8,
+  [AnnotationToolEnum.TRACE]: 4,
+  [AnnotationToolEnum.ERASE_TRACE]: 4,
+  [AnnotationToolEnum.BRUSH]: 4,
+  [AnnotationToolEnum.ERASE_BRUSH]: 4,
+  [AnnotationToolEnum.FILL_CELL]: 4,
 };
 export function isVolumeTool(tool: AnnotationTool): boolean {
   return VolumeTools.indexOf(tool) > -1;

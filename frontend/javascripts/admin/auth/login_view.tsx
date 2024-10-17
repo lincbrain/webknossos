@@ -41,7 +41,7 @@ function LoginView({ history, redirect }: Props) {
           <h5>Please ensure that you are <b>not using an Incognito browser session</b> as cookies are required for login
             via the LINC Data Platform
           </h5>
-          <LoginForm layout="horizontal" onLoggedIn={onLoggedIn} />
+          {/*<LoginForm layout="horizontal" onLoggedIn={onLoggedIn} />*/}
         </Card>
       </Col>
     </Row>
