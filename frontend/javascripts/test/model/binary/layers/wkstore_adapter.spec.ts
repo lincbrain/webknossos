@@ -6,8 +6,8 @@ import datasetServerObject from "test/fixtures/dataset_server_object";
 import mockRequire from "mock-require";
 import sinon from "sinon";
 import test from "ava";
-import { ResolutionInfo } from "oxalis/model/helpers/resolution_info";
-import { APIDataLayer } from "types/api_flow_types";
+import { MagInfo } from "oxalis/model/helpers/mag_info";
+import type { APIDataLayer } from "types/api_flow_types";
 
 const RequestMock = {
   always: (promise: Promise<any>, func: (v: any) => any) => promise.then(func, func),
@@ -23,10 +23,11 @@ function setFourBit(bool: boolean) {
 
 const mockedCube = {
   isSegmentation: true,
-  resolutionInfo: new ResolutionInfo([
+  magInfo: new MagInfo([
     [1, 1, 1],
     [2, 2, 2],
   ]),
+  triggerBucketDataChanged: () => {},
 };
 const StoreMock = {
   getState: () => ({
@@ -44,6 +45,7 @@ const StoreMock = {
         name: "localhost",
         url: "http://localhost:9000",
       },
+      volumes: [],
     },
     datasetConfiguration: {
       fourBit: _fourBit,

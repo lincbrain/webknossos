@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { PropTypes } from "@scalableminds/prop-types";
-import { Tag, Spin, Button, Input, Modal, Card, Alert, App, TableProps } from "antd";
+import { Tag, Spin, Button, Input, Modal, Card, Alert, App, type TableProps } from "antd";
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -13,7 +13,8 @@ import {
   PlusOutlined,
   UserAddOutlined,
 } from "@ant-design/icons";
-import React, { useEffect, useState } from "react";
+import type React from "react";
+import { useEffect, useState } from "react";
 import _ from "lodash";
 import features from "features";
 import { AsyncLink } from "components/async_clickables";
@@ -221,7 +222,7 @@ function TaskListView({ initialFieldValues }: Props) {
         <p>
           To learn more about the task system in WEBKNOSSOS,{" "}
           <a
-            href="https://docs.webknossos.org/webknossos/tasks.html"
+            href="https://docs.webknossos.org/webknossos/tasks_projects/index.html"
             rel="noopener noreferrer"
             target="_blank"
           >

@@ -1,4 +1,4 @@
-FROM eclipse-temurin:21
+FROM eclipse-temurin:21-jammy
 ARG VERSION_NODE="18.x"
 
 RUN curl -sL "https://deb.nodesource.com/setup_${VERSION_NODE}" | bash - \
@@ -9,7 +9,6 @@ RUN mkdir -p /webknossos
 WORKDIR /webknossos
 
 COPY target/universal/stage .
-
 
 RUN addgroup --system --gid 999 webknossos \
   && adduser --system --uid 999 --ingroup webknossos webknossos \

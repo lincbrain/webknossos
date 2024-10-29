@@ -9,7 +9,7 @@ import window, { alert, document, location } from "libs/window";
 import _ from "lodash";
 import messages from "messages";
 import { ControlModeEnum } from "oxalis/constants";
-import { getResolutionInfo } from "oxalis/model/accessors/dataset_accessor";
+import { getMagInfo } from "oxalis/model/accessors/dataset_accessor";
 import { selectQueue } from "oxalis/model/accessors/save_accessor";
 import { selectTracing } from "oxalis/model/accessors/tracing_accessor";
 import { getVolumeTracingById } from "oxalis/model/accessors/volumetracing_accessor";
@@ -26,8 +26,8 @@ import type { InitializeSkeletonTracingAction } from "oxalis/model/actions/skele
 import { SkeletonTracingSaveRelevantActions } from "oxalis/model/actions/skeletontracing_actions";
 import { ViewModeSaveRelevantActions } from "oxalis/model/actions/view_mode_actions";
 import {
-  InitializeEditableMappingAction,
-  InitializeVolumeTracingAction,
+  type InitializeEditableMappingAction,
+  type InitializeVolumeTracingAction,
   VolumeTracingSaveRelevantActions,
 } from "oxalis/model/actions/volumetracing_actions";
 import compactSaveQueue from "oxalis/model/helpers/compaction/compact_save_queue";
@@ -107,7 +107,7 @@ export function* pushSaveQueueAsync(saveQueueType: SaveQueueType, tracingId: str
     //    would be present here, too (note the risk would be greater, because the
     //    user didn't use the save button which is usually accompanied a small pause).
     const itemCountToSave = forcePush
-      ? Infinity
+      ? Number.POSITIVE_INFINITY
       : yield* select((state) => selectQueue(state, saveQueueType, tracingId).length);
     let savedItemCount = 0;
     while (savedItemCount < itemCountToSave) {
@@ -196,6 +196,9 @@ export function* sendRequestToServer(
           method: "POST",
           data: compactedSaveQueue,
           compress: process.env.NODE_ENV === "production",
+          // Suppressing error toast, as the doWithToken retry with personal token functionality should not show an error.
+          // Instead the error is logged and toggleErrorHighlighting should take care of showing an error to the user.
+          showErrorToast: false,
         },
       );
       const endTime = Date.now();
@@ -288,17 +291,17 @@ export function* sendRequestToServer(
 
 function* markBucketsAsNotDirty(saveQueue: Array<SaveQueueEntry>, tracingId: string) {
   const segmentationLayer = Model.getSegmentationTracingLayer(tracingId);
-  const segmentationResolutionInfo = yield* call(getResolutionInfo, segmentationLayer.resolutions);
+  const segmentationResolutionInfo = yield* call(getMagInfo, segmentationLayer.resolutions);
 
   if (segmentationLayer != null) {
     for (const saveEntry of saveQueue) {
       for (const updateAction of saveEntry.actions) {
         if (updateAction.name === "updateBucket") {
           const { position, mag, additionalCoordinates } = updateAction.value;
-          const resolutionIndex = segmentationResolutionInfo.getIndexByResolution(mag);
+          const resolutionIndex = segmentationResolutionInfo.getIndexByMag(mag);
           const zoomedBucketAddress = globalPositionToBucketPosition(
             position,
-            segmentationResolutionInfo.getDenseResolutions(),
+            segmentationResolutionInfo.getDenseMags(),
             resolutionIndex,
             additionalCoordinates,
           );
@@ -573,6 +576,9 @@ function* watchForSaveConflicts() {
   while (true) {
     const interval = yield* call(getPollInterval);
     yield* call(sleep, interval);
+    if (yield* select((state) => state.uiInformation.showVersionRestore)) {
+      continue;
+    }
     try {
       yield* call(checkForNewVersion);
     } catch (exception) {

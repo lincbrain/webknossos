@@ -11,10 +11,13 @@ import {
   Tooltip,
   Table,
   Select,
-  Slider,
   Divider,
 } from "antd";
+<<<<<<< HEAD
 import React, { useMemo, useState } from "react";
+=======
+import { useMemo, useState } from "react";
+>>>>>>> upstream/master
 import { Vector3Input } from "libs/vector_input";
 import { validateLayerViewConfigurationObjectJSON, syncValidator } from "types/validation";
 import { getDefaultLayerViewConfiguration } from "types/schemas/dataset_view_configuration.schema";
@@ -30,6 +33,7 @@ import { BLEND_MODES } from "oxalis/constants";
 import ColorLayerOrderingTable from "./color_layer_ordering_component";
 import { APIDatasetId } from "types/api_flow_types";
 import { getAgglomeratesForDatasetLayer, getMappingsForDatasetLayer } from "admin/admin_rest_api";
+import { Slider } from "components/slider";
 
 const FormItem = Form.Item;
 
@@ -42,7 +46,10 @@ export default function DatasetSettingsViewConfigTab(props: {
     Record<string, [string[], string[]]>
   >({});
 
+<<<<<<< HEAD
   // biome-ignore lint/correctness/useExhaustiveDependencies: Update is not necessary when availableMappingsPerLayer[layerName] changes.
+=======
+>>>>>>> upstream/master
   const validateDefaultMappings = useMemo(
     () => async (configStr: string, dataStoreURL: string, datasetId: APIDatasetId) => {
       let config = {} as DatasetConfiguration["layers"];
@@ -204,7 +211,7 @@ export default function DatasetSettingsViewConfigTab(props: {
           <FormItemWithInfo
             name={["defaultConfiguration", "zoom"]}
             label="Zoom"
-            info="A zoom of &ldquo;1&rdquo; will display the data in its original resolution."
+            info="A zoom of &ldquo;1&rdquo; will display the data in its original magnification."
             rules={[
               {
                 validator: syncValidator(

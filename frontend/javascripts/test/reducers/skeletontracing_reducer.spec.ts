@@ -13,8 +13,8 @@ import type { OxalisState, SkeletonTracing, Node } from "oxalis/store";
 import defaultState from "oxalis/default_state";
 import { TreeTypeEnum, type Vector3 } from "oxalis/constants";
 import type { Action } from "oxalis/model/actions/actions";
-import * as OriginalSkeletonTracingActions from "oxalis/model/actions/skeletontracing_actions";
-import OriginalSkeletonTracingReducer from "oxalis/model/reducers/skeletontracing_reducer";
+import type * as OriginalSkeletonTracingActions from "oxalis/model/actions/skeletontracing_actions";
+import type OriginalSkeletonTracingReducer from "oxalis/model/reducers/skeletontracing_reducer";
 import { enforceSkeletonTracing } from "oxalis/model/accessors/skeletontracing_accessor";
 
 mock("app", {
@@ -79,6 +79,7 @@ initialSkeletonTracing.trees[1] = {
   groupId: MISSING_GROUP_ID,
   type: TreeTypeEnum.DEFAULT,
   edgesAreVisible: true,
+  metadata: [],
 };
 const initialState: OxalisState = update(defaultState, {
   tracing: {
@@ -129,7 +130,7 @@ test("SkeletonTracing should add a new node", (t) => {
     untransformedPosition: position,
     rotation,
     viewport,
-    resolution,
+    mag: resolution,
     id: 1,
     radius: 1,
   });
@@ -294,7 +295,7 @@ test("SkeletonTracing should delete nodes and split the tree", (t) => {
     untransformedPosition: [0, 0, 0],
     additionalCoordinates: null,
     radius: 10,
-    resolution: 10,
+    mag: 10,
     rotation: [0, 0, 0],
     timestamp: 0,
     viewport: 1,
@@ -351,6 +352,7 @@ test("SkeletonTracing should delete nodes and split the tree", (t) => {
               isVisible: true,
               type: TreeTypeEnum.DEFAULT,
               edgesAreVisible: true,
+              metadata: [],
             },
             [1]: {
               treeId: 1,
@@ -378,6 +380,7 @@ test("SkeletonTracing should delete nodes and split the tree", (t) => {
               isVisible: true,
               type: TreeTypeEnum.DEFAULT,
               edgesAreVisible: true,
+              metadata: [],
             },
           },
         },
@@ -450,7 +453,7 @@ test("SkeletonTracing should delete an edge and split the tree", (t) => {
     untransformedPosition: [0, 0, 0],
     additionalCoordinates: null,
     radius: 10,
-    resolution: 10,
+    mag: 10,
     rotation: [0, 0, 0],
     timestamp: 0,
     viewport: 1,
@@ -507,6 +510,7 @@ test("SkeletonTracing should delete an edge and split the tree", (t) => {
               isVisible: true,
               type: TreeTypeEnum.DEFAULT,
               edgesAreVisible: true,
+              metadata: [],
             },
             [1]: {
               treeId: 1,
@@ -534,6 +538,7 @@ test("SkeletonTracing should delete an edge and split the tree", (t) => {
               isVisible: true,
               type: TreeTypeEnum.DEFAULT,
               edgesAreVisible: true,
+              metadata: [],
             },
           },
         },

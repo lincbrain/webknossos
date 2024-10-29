@@ -1,34 +1,35 @@
 import { saveAs } from "file-saver";
 import _ from "lodash";
 import { V3 } from "libs/mjs";
-import { chunkDynamically, sleep } from "libs/utils";
+import { areVec3AlmostEqual, chunkDynamically, sleep } from "libs/utils";
 import ErrorHandling from "libs/error_handling";
 import type { APIDataset, APIMeshFile, APISegmentationLayer } from "types/api_flow_types";
 import { mergeBufferGeometries } from "libs/BufferGeometryUtils";
 import Deferred from "libs/async/deferred";
+import type { ActionPattern } from "redux-saga/effects";
 
 import Store from "oxalis/store";
 import {
-  getResolutionInfo,
+  getMagInfo,
   getMappingInfo,
   getVisibleSegmentationLayer,
   getSegmentationLayerByName,
 } from "oxalis/model/accessors/dataset_accessor";
 import {
-  LoadAdHocMeshAction,
-  LoadPrecomputedMeshAction,
-  AdHocMeshInfo,
+  type LoadAdHocMeshAction,
+  type LoadPrecomputedMeshAction,
+  type AdHocMeshInfo,
   loadPrecomputedMeshAction,
 } from "oxalis/model/actions/segmentation_actions";
 import type { Action } from "oxalis/model/actions/actions";
 import type { Vector3 } from "oxalis/constants";
 import { AnnotationToolEnum, MappingStatusEnum } from "oxalis/constants";
 import {
-  UpdateMeshVisibilityAction,
-  RemoveMeshAction,
-  RefreshMeshAction,
-  TriggerMeshDownloadAction,
-  MaybeFetchMeshFilesAction,
+  type UpdateMeshVisibilityAction,
+  type RemoveMeshAction,
+  type RefreshMeshAction,
+  type TriggerMeshDownloadAction,
+  type MaybeFetchMeshFilesAction,
   updateMeshFileListAction,
   updateCurrentMeshFileAction,
   dispatchMaybeFetchMeshFilesAsync,
@@ -37,7 +38,7 @@ import {
   addPrecomputedMeshAction,
   finishedLoadingMeshAction,
   startedLoadingMeshAction,
-  TriggerMeshesDownloadAction,
+  type TriggerMeshesDownloadAction,
   updateMeshVisibilityAction,
 } from "oxalis/model/actions/annotation_actions";
 import type { Saga } from "oxalis/model/sagas/effect-generators";
@@ -52,12 +53,11 @@ import {
   getBucketPositionsForAdHocMesh,
 } from "admin/admin_rest_api";
 import { zoomedAddressToAnotherZoomStepWithInfo } from "oxalis/model/helpers/position_converter";
-import DataLayer from "oxalis/model/data_layer";
+import type DataLayer from "oxalis/model/data_layer";
 import { Model } from "oxalis/singletons";
 import ThreeDMap from "libs/ThreeDMap";
 import exportToStl from "libs/stl_exporter";
 import getSceneController from "oxalis/controller/scene_controller_provider";
-import window from "libs/window";
 import {
   getActiveSegmentationTracing,
   getEditableMappingForVolumeTracingId,
@@ -70,17 +70,18 @@ import { getDracoLoader } from "libs/draco";
 import messages from "messages";
 import processTaskWithPool from "libs/async/task_pool";
 import { getBaseSegmentationName } from "oxalis/view/right-border-tabs/segments_tab/segments_view_helper";
-import {
+import type {
   BatchUpdateGroupsAndSegmentsAction,
   RemoveSegmentAction,
   UpdateSegmentAction,
 } from "../actions/volumetracing_actions";
-import { ResolutionInfo } from "../helpers/resolution_info";
-import { type AdditionalCoordinate } from "types/api_flow_types";
+import type { MagInfo } from "../helpers/mag_info";
+import type { AdditionalCoordinate } from "types/api_flow_types";
 import Zip from "libs/zipjs_wrapper";
-import { FlycamAction } from "../actions/flycam_actions";
+import type { FlycamAction } from "../actions/flycam_actions";
 import { getAdditionalCoordinatesAsString } from "../accessors/flycam_accessor";
-import { BufferGeometryWithInfo } from "oxalis/controller/segment_mesh_controller";
+import type { BufferGeometryWithInfo } from "oxalis/controller/segment_mesh_controller";
+import { WkDevFlags } from "oxalis/api/wk_dev";
 
 export const NO_LOD_MESH_INDEX = -1;
 const MAX_RETRY_COUNT = 5;
@@ -104,10 +105,9 @@ const MESH_CHUNK_THROTTLE_LIMIT = 50;
 // Maps from additional coordinates, layerName and segmentId to a ThreeDMap that stores for each chunk
 // (at x, y, z) position whether the mesh chunk was loaded.
 const adhocMeshesMapByLayer: Record<string, Record<string, Map<number, ThreeDMap<boolean>>>> = {};
+
 function marchingCubeSizeInTargetMag(): Vector3 {
-  return (window as any).__marchingCubeSizeInTargetMag != null
-    ? (window as any).__marchingCubeSizeInTargetMag
-    : [64, 64, 64];
+  return WkDevFlags.meshing.marchingCubeSizeInTargetMag;
 }
 const modifiedCells: Set<number> = new Set();
 export function isMeshSTL(buffer: ArrayBuffer): boolean {
@@ -155,12 +155,12 @@ function removeMapForSegment(
   adhocMeshesMapByLayer[additionalCoordinateKey][layerName].delete(segmentId);
 }
 
-function getCubeSizeInMag1(zoomStep: number, resolutionInfo: ResolutionInfo): Vector3 {
+function getCubeSizeInMag1(zoomStep: number, magInfo: MagInfo): Vector3 {
   // Convert marchingCubeSizeInTargetMag to mag1 via zoomStep
   // Drop the last element of the Vector4;
   const [x, y, z] = zoomedAddressToAnotherZoomStepWithInfo(
     [...marchingCubeSizeInTargetMag(), zoomStep],
-    resolutionInfo,
+    magInfo,
     0,
   );
   return [x, y, z];
@@ -169,9 +169,9 @@ function getCubeSizeInMag1(zoomStep: number, resolutionInfo: ResolutionInfo): Ve
 function clipPositionToCubeBoundary(
   position: Vector3,
   zoomStep: number,
-  resolutionInfo: ResolutionInfo,
+  magInfo: MagInfo,
 ): Vector3 {
-  const cubeSizeInMag1 = getCubeSizeInMag1(zoomStep, resolutionInfo);
+  const cubeSizeInMag1 = getCubeSizeInMag1(zoomStep, magInfo);
   const currentCube = V3.floor(V3.divide3(position, cubeSizeInMag1));
   const clippedPosition = V3.scale3(currentCube, cubeSizeInMag1);
   return clippedPosition;
@@ -191,10 +191,10 @@ function getNeighborPosition(
   clippedPosition: Vector3,
   neighborId: number,
   zoomStep: number,
-  resolutionInfo: ResolutionInfo,
+  magInfo: MagInfo,
 ): Vector3 {
   const neighborMultiplier = NEIGHBOR_LOOKUP[neighborId];
-  const cubeSizeInMag1 = getCubeSizeInMag1(zoomStep, resolutionInfo);
+  const cubeSizeInMag1 = getCubeSizeInMag1(zoomStep, magInfo);
   const neighboringPosition: Vector3 = [
     clippedPosition[0] + neighborMultiplier[0] * cubeSizeInMag1[0],
     clippedPosition[1] + neighborMultiplier[1] * cubeSizeInMag1[1],
@@ -238,9 +238,9 @@ function* getInfoForMeshLoading(
   meshExtraInfo: AdHocMeshInfo,
 ): Saga<{
   zoomStep: number;
-  resolutionInfo: ResolutionInfo;
+  magInfo: MagInfo;
 }> {
-  const resolutionInfo = getResolutionInfo(layer.resolutions);
+  const resolutionInfo = getMagInfo(layer.resolutions);
   const preferredZoomStep =
     meshExtraInfo.preferredQuality != null
       ? meshExtraInfo.preferredQuality
@@ -250,7 +250,7 @@ function* getInfoForMeshLoading(
   const zoomStep = resolutionInfo.getClosestExistingIndex(preferredZoomStep);
   return {
     zoomStep,
-    resolutionInfo,
+    magInfo: resolutionInfo,
   };
 }
 
@@ -273,7 +273,11 @@ function* loadAdHocMesh(
 
   const meshExtraInfo = yield* call(getMeshExtraInfo, layer.name, maybeExtraInfo);
 
-  const { zoomStep, resolutionInfo } = yield* call(getInfoForMeshLoading, layer, meshExtraInfo);
+  const { zoomStep, magInfo: resolutionInfo } = yield* call(
+    getInfoForMeshLoading,
+    layer,
+    meshExtraInfo,
+  );
   batchCounterPerSegment[segmentId] = 0;
 
   // If a REMOVE_MESH action is dispatched and consumed
@@ -293,10 +297,10 @@ function* loadAdHocMesh(
       removeExistingMesh,
     ),
     cancel: take(
-      (action: Action) =>
+      ((action: Action) =>
         action.type === "REMOVE_MESH" &&
         action.segmentId === segmentId &&
-        action.layerName === layer.name,
+        action.layerName === layer.name) as ActionPattern,
     ),
   });
   removeMeshWithoutVoxels(segmentId, layer.name, seedAdditionalCoordinates);
@@ -322,7 +326,7 @@ function* loadFullAdHocMesh(
   additionalCoordinates: AdditionalCoordinate[] | undefined | null,
   zoomStep: number,
   meshExtraInfo: AdHocMeshInfo,
-  resolutionInfo: ResolutionInfo,
+  resolutionInfo: MagInfo,
   removeExistingMesh: boolean,
 ): Saga<void> {
   let isInitialRequest = true;
@@ -342,7 +346,7 @@ function* loadFullAdHocMesh(
 
   const cubeSize = marchingCubeSizeInTargetMag();
   const tracingStoreHost = yield* select((state) => state.tracing.tracingStore.url);
-  const mag = resolutionInfo.getResolutionByIndexOrThrow(zoomStep);
+  const mag = resolutionInfo.getMagByIndexOrThrow(zoomStep);
 
   const volumeTracing = yield* select((state) => getActiveSegmentationTracing(state));
   const visibleSegmentationLayer = yield* select((state) => getVisibleSegmentationLayer(state));
@@ -351,7 +355,7 @@ function* loadFullAdHocMesh(
   if (meshExtraInfo.useDataStore != null) {
     // ... except if the caller specified whether to use the data store ...
     useDataStore = meshExtraInfo.useDataStore;
-  } else if (volumeTracing?.mappingIsEditable) {
+  } else if (volumeTracing?.hasEditableMapping) {
     // ... or if an editable mapping is active.
     useDataStore = false;
   }
@@ -360,7 +364,7 @@ function* loadFullAdHocMesh(
   // and that don't have editable mappings.
   const usePositionsFromSegmentIndex =
     volumeTracing?.hasSegmentIndex &&
-    !volumeTracing.mappingIsEditable &&
+    !volumeTracing.hasEditableMapping &&
     visibleSegmentationLayer?.tracingId != null;
   let positionsToRequest = usePositionsFromSegmentIndex
     ? yield* getChunkPositionsFromSegmentIndex(
@@ -442,7 +446,7 @@ function* maybeLoadMeshChunk(
   clippedPosition: Vector3,
   zoomStep: number,
   meshExtraInfo: AdHocMeshInfo,
-  resolutionInfo: ResolutionInfo,
+  resolutionInfo: MagInfo,
   isInitialRequest: boolean,
   removeExistingMesh: boolean,
   useDataStore: boolean,
@@ -461,7 +465,7 @@ function* maybeLoadMeshChunk(
 
   batchCounterPerSegment[segmentId]++;
   threeDMap.set(clippedPosition, true);
-  const scale = yield* select((state) => state.dataset.dataSource.scale);
+  const scaleFactor = yield* select((state) => state.dataset.dataSource.scale.factor);
   const dataStoreHost = yield* select((state) => state.dataset.dataStore.url);
   const owningOrganization = yield* select((state) => state.dataset.owningOrganization);
   const datasetName = yield* select((state) => state.dataset.name);
@@ -471,7 +475,7 @@ function* maybeLoadMeshChunk(
   }`;
   const tracingStoreUrl = `${tracingStoreHost}/tracings/volume/${layer.name}`;
 
-  const mag = resolutionInfo.getResolutionByIndexOrThrow(zoomStep);
+  const mag = resolutionInfo.getMagByIndexOrThrow(zoomStep);
 
   if (isInitialRequest) {
     sendAnalyticsEvent("request_isosurface", {
@@ -499,7 +503,7 @@ function* maybeLoadMeshChunk(
           mag,
           segmentId,
           cubeSize,
-          scale,
+          scaleFactor,
           findNeighbors,
           ...meshExtraInfo,
         },
@@ -754,10 +758,10 @@ function* loadPrecomputedMesh(action: LoadPrecomputedMeshAction) {
       mergeChunks,
     ),
     cancel: take(
-      (otherAction: Action) =>
+      ((otherAction: Action) =>
         otherAction.type === "REMOVE_MESH" &&
         otherAction.segmentId === segmentId &&
-        otherAction.layerName === layer.name,
+        otherAction.layerName === layer.name) as ActionPattern,
     ),
   });
 }
@@ -1027,6 +1031,23 @@ function _getLoadChunksTasks(
                 // Compute vertex normals to achieve smooth shading
                 bufferGeometries.forEach((geometry) => geometry.computeVertexNormals());
 
+                // Check if the mesh scale is different to all supported mags of the active segmentation scaled by the dataset scale and warn in the console to make debugging easier in such a case.
+                // This hint at the mesh file being computed when the dataset scale was different than currently configured.
+                const segmentationLayerResolutions = yield* select(
+                  (state) => getVisibleSegmentationLayer(state)?.resolutions,
+                );
+                const datasetScaleFactor = dataset.dataSource.scale.factor;
+                if (segmentationLayerResolutions && scale) {
+                  const doesSomeSegmResolutionMatchMeshScale = segmentationLayerResolutions.some(
+                    (res) => areVec3AlmostEqual(V3.scale3(datasetScaleFactor, res), scale),
+                  );
+                  if (!doesSomeSegmResolutionMatchMeshScale) {
+                    console.warn(
+                      `Scale of mesh ${id} is different to dataset scale. Mesh scale: ${scale}, Dataset scale: ${dataset.dataSource.scale.factor}. This might lead to unexpected rendering results.`,
+                    );
+                  }
+                }
+
                 yield* call(
                   {
                     context: segmentMeshController,
@@ -1208,7 +1229,7 @@ export function* handleAdditionalCoordinateUpdate(): Saga<void> {
       for (const [layerName, recordsForOneLayer] of Object.entries(recordsOfLayers)) {
         const segmentIds = Object.keys(recordsForOneLayer);
         for (const segmentIdAsString of segmentIds) {
-          const segmentId = parseInt(segmentIdAsString);
+          const segmentId = Number.parseInt(segmentIdAsString);
           yield* put(
             updateMeshVisibilityAction(
               layerName,

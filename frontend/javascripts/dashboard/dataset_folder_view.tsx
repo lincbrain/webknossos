@@ -1,6 +1,6 @@
 import { filterNullValues } from "libs/utils";
 import React, { useEffect, useState } from "react";
-import { APIDatasetCompact, APIUser, FolderItem } from "types/api_flow_types";
+import type { APIDatasetCompact, APIUser, FolderItem } from "types/api_flow_types";
 import DatasetCollectionContextProvider, {
   useDatasetCollectionContext,
 } from "./dataset/dataset_collection_context";
@@ -134,7 +134,7 @@ function DatasetFolderViewInner(props: Props) {
                 <p>
                   WEBKNOSSOS supports a variety of (remote){" "}
                   <a
-                    href="https://docs.webknossos.org/webknossos/data_formats.html"
+                    href="https://docs.webknossos.org/webknossos/data/index.html"
                     target="_blank"
                     rel="noreferrer"
                   >

@@ -24,6 +24,7 @@ import type {
   ServerSkeletonTracingTree,
   ServerNode,
   ServerBranchPoint,
+  MetadataEntryProto,
 } from "types/api_flow_types";
 import {
   getSkeletonTracing,
@@ -33,15 +34,16 @@ import {
   getActiveTreeGroup,
   findTreeByNodeId,
   mapGroupsToGenerator,
+  mapGroups,
 } from "oxalis/model/accessors/skeletontracing_accessor";
 import ColorGenerator from "libs/color_generator";
-import { TreeType, TreeTypeEnum, Vector3 } from "oxalis/constants";
+import { type TreeType, TreeTypeEnum, type Vector3 } from "oxalis/constants";
 import Constants, { NODE_ID_REF_REGEX } from "oxalis/constants";
 import DiffableMap from "libs/diffable_map";
 import EdgeCollection from "oxalis/model/edge_collection";
 import * as Utils from "libs/utils";
 import { V3 } from "libs/mjs";
-import { type AdditionalCoordinate } from "types/api_flow_types";
+import type { AdditionalCoordinate } from "types/api_flow_types";
 
 export function generateTreeName(state: OxalisState, timestamp: number, treeId: number) {
   let user = "";
@@ -81,7 +83,7 @@ export function getMaximumTreeId(trees: TreeMap | MutableTreeMap): number {
 
 function getNearestTreeId(treeId: number, trees: TreeMap): number {
   const sortedTreeIds = Object.keys(trees)
-    .map((currentTreeId) => parseInt(currentTreeId))
+    .map((currentTreeId) => Number.parseInt(currentTreeId))
     .sort((firstId, secId) => (firstId > secId ? 1 : -1));
 
   if (sortedTreeIds.length === 0) {
@@ -144,7 +146,7 @@ export function createNode(
     radius,
     rotation,
     viewport,
-    resolution,
+    mag: resolution,
     id: nextNewId,
     timestamp,
     bitDepth: state.datasetConfiguration.fourBit ? 4 : 8,
@@ -361,6 +363,7 @@ function splitTreeByNodes(
             groupId: activeTree.groupId,
             type: activeTree.type,
             edgesAreVisible: true,
+            metadata: activeTree.metadata,
           };
         } else {
           const immutableNewTree = createTree(
@@ -484,6 +487,7 @@ export function createTree(
   name?: string,
   type: TreeType = TreeTypeEnum.DEFAULT,
   edgesAreVisible: boolean = true,
+  metadata: MetadataEntryProto[] = [],
 ): Maybe<Tree> {
   return getSkeletonTracing(state.tracing).chain((skeletonTracing) => {
     // Create a new tree id and name
@@ -492,11 +496,11 @@ export function createTree(
     let groupId = null;
 
     if (addToActiveGroup) {
-      const groupIdOfActiveTreeMaybe = getActiveTree(skeletonTracing).map((tree) => tree.groupId);
+      const groupIdOfActiveTree = getActiveTree(skeletonTracing)?.groupId;
       const groupIdOfActiveGroupMaybe = getActiveTreeGroup(skeletonTracing).map(
         (group) => group.groupId,
       );
-      groupId = Utils.toNullable(groupIdOfActiveTreeMaybe.orElse(() => groupIdOfActiveGroupMaybe));
+      groupId = groupIdOfActiveTree ?? Utils.toNullable(groupIdOfActiveGroupMaybe);
     }
 
     // Create the new tree
@@ -513,6 +517,7 @@ export function createTree(
       groupId,
       type,
       edgesAreVisible,
+      metadata,
     };
     return Maybe.Just(tree);
   });
@@ -805,6 +810,34 @@ export function toggleTreeGroupReducer(
   });
 }
 
+export function setExpandedTreeGroups(
+  state: OxalisState,
+  shouldBeExpanded: (arg: TreeGroup) => boolean,
+): OxalisState {
+  const currentTreeGroups = state.tracing?.skeleton?.treeGroups;
+  if (currentTreeGroups == null) {
+    return state;
+  }
+  const newGroups = mapGroups(currentTreeGroups, (group) => {
+    const updatedIsExpanded = shouldBeExpanded(group);
+    if (updatedIsExpanded !== group.isExpanded) {
+      return { ...group, isExpanded: updatedIsExpanded };
+    } else {
+      return group;
+    }
+  });
+
+  return update(state, {
+    tracing: {
+      skeleton: {
+        treeGroups: {
+          $set: newGroups,
+        },
+      },
+    },
+  });
+}
+
 function serverNodeToMutableNode(n: ServerNode): MutableNode {
   return {
     id: n.id,
@@ -813,7 +846,7 @@ function serverNodeToMutableNode(n: ServerNode): MutableNode {
     rotation: Utils.point3ToVector3(n.rotation),
     bitDepth: n.bitDepth,
     viewport: n.viewport,
-    resolution: n.resolution,
+    mag: n.resolution,
     radius: n.radius,
     timestamp: n.createdTimestamp,
     interpolation: n.interpolation,
@@ -850,6 +883,7 @@ export function createMutableTreeMapFromTreeArray(
         groupId: tree.groupId,
         type: tree.type != null ? tree.type : TreeTypeEnum.DEFAULT,
         edgesAreVisible: tree.edgesAreVisible != null ? tree.edgesAreVisible : true,
+        metadata: tree.metadata,
       }),
     ),
     "treeId",

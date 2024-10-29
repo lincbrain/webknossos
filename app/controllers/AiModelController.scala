@@ -43,9 +43,9 @@ case class RunInferenceParameters(annotationId: Option[ObjectId],
                                   datasetName: String,
                                   colorLayerName: String,
                                   boundingBox: String,
-                                  newSegmentationLayerName: String,
                                   newDatasetName: String,
-                                  maskAnnotationLayerName: Option[String])
+                                  maskAnnotationLayerName: Option[String],
+                                  workflowYaml: Option[String])
 
 object RunInferenceParameters {
   implicit val jsonFormat: OFormat[RunInferenceParameters] = Json.format[RunInferenceParameters]
@@ -55,6 +55,16 @@ case class UpdateAiModelParameters(name: String, comment: Option[String])
 
 object UpdateAiModelParameters {
   implicit val jsonFormat: OFormat[UpdateAiModelParameters] = Json.format[UpdateAiModelParameters]
+}
+
+case class RegisterAiModelParameters(id: ObjectId, // must be a valid MongoDB ObjectId
+                                     dataStoreName: String,
+                                     name: String,
+                                     comment: Option[String],
+                                     category: Option[AiModelCategory])
+
+object RegisterAiModelParameters {
+  implicit val jsonFormat: OFormat[RegisterAiModelParameters] = Json.format[RegisterAiModelParameters]
 }
 
 class AiModelController @Inject()(
@@ -133,9 +143,9 @@ class AiModelController @Inject()(
         jobCommand = JobCommand.train_model
         commandArgs = Json.obj(
           "training_annotations" -> Json.toJson(trainingAnnotations),
-          "organization_name" -> organization.name,
+          "organization_name" -> organization._id,
           "model_id" -> modelId,
-          "workflow_yaml" -> request.body.workflowYaml
+          "custom_workflow_provided_by_user" -> request.body.workflowYaml
         )
         existingAiModelsCount <- aiModelDAO.countByNameAndOrganization(request.body.name,
                                                                        request.identity._organization)
@@ -168,17 +178,16 @@ class AiModelController @Inject()(
         _ <- aiModelDAO.findOne(request.body.aiModelId) ?~> "aiModel.notFound"
         _ <- datasetService.assertValidDatasetName(request.body.newDatasetName)
         _ <- datasetService.assertNewDatasetName(request.body.newDatasetName, organization._id)
-        _ <- datasetService.assertValidLayerNameLax(request.body.newSegmentationLayerName)
         jobCommand = JobCommand.infer_with_model
         boundingBox <- BoundingBox.fromLiteral(request.body.boundingBox).toFox
         commandArgs = Json.obj(
-          "organization_name" -> organization.name,
+          "organization_name" -> organization._id,
           "dataset_name" -> dataset.name,
           "color_layer_name" -> request.body.colorLayerName,
           "bounding_box" -> boundingBox.toLiteral,
           "model_id" -> request.body.aiModelId,
-          "new_segmentation_layer_name" -> request.body.newSegmentationLayerName,
-          "new_dataset_name" -> request.body.newDatasetName
+          "new_dataset_name" -> request.body.newDatasetName,
+          "custom_workflow_provided_by_user" -> request.body.workflowYaml
         )
         newInferenceJob <- jobService.submitJob(jobCommand, commandArgs, request.identity, dataStore.name) ?~> "job.couldNotRunInferWithModel"
         newAiInference = AiInference(
@@ -189,7 +198,7 @@ class AiModelController @Inject()(
           _annotation = request.body.annotationId,
           boundingBox = boundingBox,
           _inferenceJob = newInferenceJob._id,
-          newSegmentationLayerName = request.body.newSegmentationLayerName,
+          newSegmentationLayerName = "segmentation",
           maskAnnotationLayerName = request.body.maskAnnotationLayerName
         )
         _ <- aiInferenceDAO.insertOne(newAiInference)
@@ -208,6 +217,28 @@ class AiModelController @Inject()(
         updatedAiModel <- aiModelDAO.findOne(aiModelIdValidated) ?~> "aiModel.notFound" ~> NOT_FOUND
         jsResult <- aiModelService.publicWrites(updatedAiModel)
       } yield Ok(jsResult)
+    }
+
+  def registerAiModel: Action[RegisterAiModelParameters] =
+    sil.SecuredAction.async(validateJson[RegisterAiModelParameters]) { implicit request =>
+      for {
+        _ <- userService.assertIsSuperUser(request.identity)
+        _ <- dataStoreDAO.findOneByName(request.body.dataStoreName) ?~> "dataStore.notFound"
+        _ <- aiModelDAO.findOne(request.body.id).reverse ?~> "aiModel.id.taken"
+        _ <- aiModelDAO.findOneByName(request.body.name).reverse ?~> "aiModel.name.taken"
+        _ <- aiModelDAO.insertOne(
+          AiModel(
+            request.body.id,
+            _organization = request.identity._organization,
+            request.body.dataStoreName,
+            request.identity._id,
+            None,
+            List.empty,
+            request.body.name,
+            request.body.comment,
+            request.body.category
+          ))
+      } yield Ok
     }
 
   def deleteAiModel(aiModelId: String): Action[AnyContent] =

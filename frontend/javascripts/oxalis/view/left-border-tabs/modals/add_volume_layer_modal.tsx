@@ -1,21 +1,22 @@
 import { Modal, Row } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
-import React, { useMemo, useState } from "react";
+import type React from "react";
+import { useMemo, useState } from "react";
 import _ from "lodash";
 import type { APIDataset, APISegmentationLayer } from "types/api_flow_types";
 import { AsyncButton } from "components/async_clickables";
 import {
   NewVolumeLayerSelection,
-  RestrictResolutionSlider,
+  RestrictMagnificationSlider,
 } from "dashboard/advanced_dataset/create_explorative_modal";
 import Store, { type Tracing } from "oxalis/store";
 import { addAnnotationLayer } from "admin/admin_rest_api";
 import {
-  getSomeResolutionInfoForDataset,
+  getSomeMagInfoForDataset,
   getLayerByName,
   getMappingInfo,
   getSegmentationLayers,
-  getResolutionInfo,
+  getMagInfo,
 } from "oxalis/model/accessors/dataset_accessor";
 import {
   getAllReadableLayerNames,
@@ -130,8 +131,8 @@ export default function AddVolumeLayerModal({
 
   const resolutionInfo =
     selectedSegmentationLayer == null
-      ? getSomeResolutionInfoForDataset(dataset)
-      : getResolutionInfo(selectedSegmentationLayer.resolutions);
+      ? getSomeMagInfoForDataset(dataset)
+      : getMagInfo(selectedSegmentationLayer.resolutions);
   const [resolutionIndices, setResolutionIndices] = useState([0, 10000]);
 
   const handleSetNewLayerName = (evt: React.ChangeEvent<HTMLInputElement>) =>
@@ -154,10 +155,10 @@ export default function AddVolumeLayerModal({
       return;
     }
     const minResolutionAllowed = Math.max(
-      ...resolutionInfo.getResolutionByIndexOrThrow(resolutionIndices[0]),
+      ...resolutionInfo.getMagByIndexOrThrow(resolutionIndices[0]),
     );
     const maxResolutionAllowed = Math.max(
-      ...resolutionInfo.getResolutionByIndexOrThrow(resolutionIndices[1]),
+      ...resolutionInfo.getMagByIndexOrThrow(resolutionIndices[1]),
     );
 
     if (selectedSegmentationLayerName == null) {
@@ -165,7 +166,7 @@ export default function AddVolumeLayerModal({
         typ: "Volume",
         name: newLayerName,
         fallbackLayerName: undefined,
-        resolutionRestrictions: {
+        magRestrictions: {
           min: minResolutionAllowed,
           max: maxResolutionAllowed,
         },
@@ -192,7 +193,7 @@ export default function AddVolumeLayerModal({
         typ: "Volume",
         name: newLayerName,
         fallbackLayerName,
-        resolutionRestrictions: {
+        magRestrictions: {
           min: minResolutionAllowed,
           max: maxResolutionAllowed,
         },
@@ -232,11 +233,11 @@ export default function AddVolumeLayerModal({
           disableLayerSelection={disableLayerSelection ?? false}
         />
       ) : null}
-      <RestrictResolutionSlider
-        resolutionInfo={resolutionInfo}
+      <RestrictMagnificationSlider
+        magInfo={resolutionInfo}
         selectedSegmentationLayer={selectedSegmentationLayer}
-        resolutionIndices={resolutionIndices}
-        setResolutionIndices={setResolutionIndices}
+        magIndices={resolutionIndices}
+        setMagIndices={setResolutionIndices}
       />
       <Row justify="center" align="middle">
         <AsyncButton onClick={handleAddVolumeLayer} type="primary" icon={<PlusOutlined />}>

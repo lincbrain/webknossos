@@ -29,7 +29,7 @@ import { CONTOUR_COLOR_DELETE, CONTOUR_COLOR_NORMAL } from "oxalis/geometries/he
 import {
   getDatasetBoundingBox,
   getMaximumSegmentIdForLayer,
-  getResolutionInfo,
+  getMagInfo,
 } from "oxalis/model/accessors/dataset_accessor";
 import {
   getPosition,
@@ -46,7 +46,7 @@ import {
   enforceActiveVolumeTracing,
   getActiveSegmentationTracing,
   getMaximumBrushSize,
-  getRenderableResolutionForSegmentationTracing,
+  getRenderableMagForSegmentationTracing,
   getRequestedOrVisibleSegmentationLayer,
   getSegmentsForLayer,
   isVolumeAnnotationDisallowedForZoom,
@@ -87,7 +87,7 @@ import {
 } from "oxalis/model/sagas/saga_helpers";
 import {
   deleteSegmentDataVolumeAction,
-  UpdateAction,
+  type UpdateAction,
   updateSegmentGroups,
 } from "oxalis/model/sagas/update_actions";
 import {
@@ -99,20 +99,20 @@ import {
   updateVolumeTracing,
   updateMappingName,
 } from "oxalis/model/sagas/update_actions";
-import VolumeLayer from "oxalis/model/volumetracing/volumelayer";
+import type VolumeLayer from "oxalis/model/volumetracing/volumelayer";
 import { Model, api } from "oxalis/singletons";
 import type { Flycam, SegmentMap, VolumeTracing } from "oxalis/store";
-import React from "react";
 import { actionChannel, call, fork, put, takeEvery, takeLatest } from "typed-redux-saga";
 import {
-  applyLabeledVoxelMapToAllMissingResolutions,
+  applyLabeledVoxelMapToAllMissingMags,
   createVolumeLayer,
   labelWithVoxelBuffer2D,
-  BooleanBox,
+  type BooleanBox,
 } from "./volume/helpers";
 import maybeInterpolateSegmentationLayer from "./volume/volume_interpolation_saga";
 import messages from "messages";
 import { pushSaveQueueTransaction } from "../actions/save_actions";
+import type { ActionPattern } from "redux-saga/effects";
 
 const OVERWRITE_EMPTY_WARNING_KEY = "OVERWRITE-EMPTY-WARNING";
 
@@ -213,7 +213,7 @@ export function* editVolumeLayerAsync(): Saga<any> {
     }
 
     const maybeLabeledResolutionWithZoomStep = yield* select((state) =>
-      getRenderableResolutionForSegmentationTracing(state, volumeTracing),
+      getRenderableMagForSegmentationTracing(state, volumeTracing),
     );
 
     if (!maybeLabeledResolutionWithZoomStep) {
@@ -414,6 +414,12 @@ export function* floodFill(): Saga<void> {
 
     const { position: positionFloat, planeId } = floodFillAction;
     const volumeTracing = yield* select(enforceActiveVolumeTracing);
+    if (volumeTracing.hasEditableMapping) {
+      const message = "Volume modification is not allowed when an editable mapping is active.";
+      Toast.error(message);
+      console.error(message);
+      continue;
+    }
     const segmentationLayer = yield* call(
       [Model, Model.getSegmentationTracingLayer],
       volumeTracing.tracingId,
@@ -425,7 +431,7 @@ export function* floodFill(): Saga<void> {
     const requestedZoomStep = yield* select((state) =>
       getActiveMagIndexForLayer(state, segmentationLayer.name),
     );
-    const resolutionInfo = yield* call(getResolutionInfo, segmentationLayer.resolutions);
+    const resolutionInfo = yield* call(getMagInfo, segmentationLayer.resolutions);
     const labeledZoomStep = resolutionInfo.getClosestExistingIndex(requestedZoomStep);
     const additionalCoordinates = yield* select((state) => state.flycam.additionalCoordinates);
     const oldSegmentIdAtSeed = cube.getDataValue(
@@ -493,7 +499,7 @@ export function* floodFill(): Saga<void> {
       }
     }
 
-    console.time("applyLabeledVoxelMapToAllMissingResolutions");
+    console.time("applyLabeledVoxelMapToAllMissingMags");
 
     for (const indexZ of indexSet) {
       const labeledVoxelMapFromFloodFill: LabeledVoxelsMap = new Map();
@@ -506,7 +512,7 @@ export function* floodFill(): Saga<void> {
         }
       }
 
-      applyLabeledVoxelMapToAllMissingResolutions(
+      applyLabeledVoxelMapToAllMissingMags(
         labeledVoxelMapFromFloodFill,
         labeledZoomStep,
         dimensionIndices,
@@ -530,7 +536,7 @@ export function* floodFill(): Saga<void> {
       ),
     );
 
-    console.timeEnd("applyLabeledVoxelMapToAllMissingResolutions");
+    console.timeEnd("applyLabeledVoxelMapToAllMissingMags");
 
     if (wasBoundingBoxExceeded) {
       yield* call(
@@ -598,7 +604,7 @@ export function* finishLayer(
 
   yield* put(registerLabelPointAction(layer.getUnzoomedCentroid()));
 }
-export function* ensureToolIsAllowedInResolution(): Saga<any> {
+export function* ensureToolIsAllowedInMag(): Saga<any> {
   yield* take("INITIALIZE_VOLUMETRACING");
 
   while (true) {
@@ -654,6 +660,7 @@ function* uncachedDiffSegmentLists(
       segment.name,
       segment.color,
       segment.groupId,
+      segment.metadata,
     );
   }
 
@@ -669,6 +676,7 @@ function* uncachedDiffSegmentLists(
         segment.name,
         segment.color,
         segment.groupId,
+        segment.metadata,
         segment.creationTime,
       );
     }
@@ -720,7 +728,7 @@ export function* diffVolumeTracing(
       // In case no mapping is active, this is denoted by setting the mapping name to null.
       const action = updateMappingName(
         volumeTracing.mappingName || null,
-        volumeTracing.mappingIsEditable || null,
+        volumeTracing.hasEditableMapping || null,
         volumeTracing.mappingIsLocked,
       );
       yield action;
@@ -823,17 +831,27 @@ function* updateHoveredSegmentId(): Saga<void> {
   }
 
   const globalMousePosition = yield* call(getGlobalMousePosition);
-  const hoveredCellInfo = yield* call(
+  const hoveredSegmentInfo = yield* call(
     { context: Model, fn: Model.getHoveredCellId },
     globalMousePosition,
   );
-  const id = hoveredCellInfo != null ? hoveredCellInfo.id : 0;
+  // Note that hoveredSegmentInfo.id can be an unmapped id even when
+  // a mapping is active, if it is a HDF5 mapping that is partially loaded
+  // and no entry exists yet for the input id.
+  const id = hoveredSegmentInfo != null ? hoveredSegmentInfo.id : 0;
+  const unmappedId = hoveredSegmentInfo != null ? hoveredSegmentInfo.unmappedId : 0;
   const oldHoveredSegmentId = yield* select(
     (store) => store.temporaryConfiguration.hoveredSegmentId,
+  );
+  const oldHoveredUnmappedSegmentId = yield* select(
+    (store) => store.temporaryConfiguration.hoveredUnmappedSegmentId,
   );
 
   if (oldHoveredSegmentId !== id) {
     yield* put(updateTemporarySettingAction("hoveredSegmentId", id));
+  }
+  if (oldHoveredUnmappedSegmentId !== unmappedId) {
+    yield* put(updateTemporarySettingAction("hoveredUnmappedSegmentId", unmappedId));
   }
 }
 
@@ -917,7 +935,7 @@ function* ensureValidBrushSize(): Saga<void> {
       "WK_READY",
       (action: Action) =>
         action.type === "UPDATE_LAYER_SETTING" && action.propertyName === "isDisabled",
-    ],
+    ] as ActionPattern<Action>,
     maybeClampBrushSize,
   );
 }
@@ -951,7 +969,7 @@ function* handleDeleteSegmentData(): Saga<void> {
 export default [
   editVolumeLayerAsync,
   handleDeleteSegmentData,
-  ensureToolIsAllowedInResolution,
+  ensureToolIsAllowedInMag,
   floodFill,
   watchVolumeTracingAsync,
   maintainSegmentsMap,

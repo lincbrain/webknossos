@@ -3,8 +3,13 @@ version: "2.2"
 services:
   # Production
   webknossos:
-    build: .
-    image: lincbrain/webknossos:${DOCKER_TAG:-master}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      cache_from:
+        - scalableminds/webknossos
+        - scalableminds/webknossos:${DEV_CACHE:-master}
+    image: scalableminds/webknossos:${DOCKER_TAG:-master}
     ports:
       - "9000:9000"
     links:
