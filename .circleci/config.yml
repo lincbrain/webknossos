@@ -15,10 +15,11 @@ jobs:
           name: "Clone Repository"
           command: |
             if [ -n "$CIRCLE_BRANCH" ]; then
-              git clone --depth 5 "$CIRCLE_REPOSITORY_URL" --branch "$CIRCLE_BRANCH" --no-tags .
-            fi
-            if [ -n "$CIRCLE_TAG" ]; then
-              git clone --depth 5 "$CIRCLE_REPOSITORY_URL" --branch "$CIRCLE_TAG" .
+              git clone --depth 5 https://github.com/lincbrain/webknossos.git --branch "$CIRCLE_BRANCH" .
+            elif [ -n "$CIRCLE_TAG" ]; then
+              git clone --depth 5 https://github.com/lincbrain/webknossos.git --branch "$CIRCLE_TAG" .
+            else
+              echo "No branch or tag specified, exiting..." && exit 1
             fi
       - run:
           name: "Custom environment variables"
