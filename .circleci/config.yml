@@ -83,18 +83,35 @@ jobs:
           command: find app webknossos-datastore/app webknossos-tracingstore/app -type f -exec md5sum {} \; | sort -k 2 | md5sum > app_checksum.txt
 
       - run:
-          name: Build webknossos docker image
+          name: Build and Tag webknossos Docker Image
           command: |
-            docker pull scalableminds/webknossos:$NORMALIZED_BRANCH || true
+            docker pull lincbrain/webknossos:${DOCKER_TAG} || true
             DEV_CACHE=$NORMALIZED_BRANCH docker-compose build --pull webknossos
+            if docker image inspect scalableminds/webknossos:$NORMALIZED_BRANCH > /dev/null 2>&1; then
+                docker tag scalableminds/webknossos:${NORMALIZED_BRANCH} lincbrain/webknossos:${DOCKER_TAG}
+            else
+                echo "Base image scalableminds/webknossos:${NORMALIZED_BRANCH} not found. Skipping tag."
+            fi
 
       - run:
-          name: Build webknossos-datastore docker image
-          command: docker-compose build --pull webknossos-datastore
+          name: Build and Tag webknossos-datastore Docker Image
+          command: |
+            docker-compose build --pull webknossos-datastore
+            if docker image inspect scalableminds/webknossos-datastore > /dev/null 2>&1; then
+                docker tag scalableminds/webknossos-datastore lincbrain/webknossos-datastore:${DOCKER_TAG}
+            else
+                echo "Base image scalableminds/webknossos-datastore not found. Skipping tag."
+            fi
 
       - run:
-          name: Build webknossos-tracingstore docker image
-          command: docker-compose build --pull webknossos-tracingstore
+          name: Build and Tag webknossos-tracingstore Docker Image
+          command: |
+            docker-compose build --pull webknossos-tracingstore
+            if docker image inspect scalableminds/webknossos-tracingstore > /dev/null 2>&1; then
+                docker tag scalableminds/webknossos-tracingstore lincbrain/webknossos-tracingstore:${DOCKER_TAG}
+            else
+                echo "Base image scalableminds/webknossos-tracingstore not found. Skipping tag."
+            fi
 
 #      - run:
 #          name: Lint frontend code and check formatting
