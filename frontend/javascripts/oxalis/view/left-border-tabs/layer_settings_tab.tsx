@@ -1469,13 +1469,7 @@ class DatasetSettings extends React.PureComponent<DatasetSettingsProps, State> {
           layerName={layerName}
           layerConfiguration={layers[layerName]}
           isColorLayer
-<<<<<<< HEAD
-          index={index}
           isLastLayer={index === colorLayerOrder.length - 1}
-          disabled={hasLessThanTwoColorLayers}
-=======
-          isLastLayer={index === colorLayerOrder.length - 1}
->>>>>>> upstream/master
           hasLessThanTwoColorLayers={hasLessThanTwoColorLayers}
         />
       );
