@@ -3,13 +3,8 @@ version: "2.2"
 services:
   # Production
   webknossos:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      cache_from:
-        - scalableminds/webknossos
-        - scalableminds/webknossos:${DEV_CACHE:-master}
-    image: scalableminds/webknossos:${DOCKER_TAG:-master}
+    build: .
+    image: lincbrain/webknossos:${DOCKER_TAG:-master}
     ports:
       - "9000:9000"
     links:
@@ -269,7 +264,7 @@ services:
 
   # FossilDB
   fossildb:
-    image: scalableminds/fossildb:master__484
+    image: scalableminds/fossildb:master__489
     command:
       - fossildb
       - -c

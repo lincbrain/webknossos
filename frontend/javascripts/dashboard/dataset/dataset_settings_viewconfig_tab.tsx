@@ -13,11 +13,7 @@ import {
   Select,
   Divider,
 } from "antd";
-<<<<<<< HEAD
-import React, { useMemo, useState } from "react";
-=======
 import { useMemo, useState } from "react";
->>>>>>> upstream/master
 import { Vector3Input } from "libs/vector_input";
 import { validateLayerViewConfigurationObjectJSON, syncValidator } from "types/validation";
 import { getDefaultLayerViewConfiguration } from "types/schemas/dataset_view_configuration.schema";
@@ -46,10 +42,6 @@ export default function DatasetSettingsViewConfigTab(props: {
     Record<string, [string[], string[]]>
   >({});
 
-<<<<<<< HEAD
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Update is not necessary when availableMappingsPerLayer[layerName] changes.
-=======
->>>>>>> upstream/master
   const validateDefaultMappings = useMemo(
     () => async (configStr: string, dataStoreURL: string, datasetId: APIDatasetId) => {
       let config = {} as DatasetConfiguration["layers"];
