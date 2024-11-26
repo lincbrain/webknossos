@@ -98,21 +98,9 @@ export function BrainSpinnerWithError({
 
 export function CoverWithLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
   return (
-<<<<<<< HEAD
-    <div className="cover-whole-screen">
-      <Row
-        justify="center"
-        style={{
-          padding: 50,
-        }}
-        align="middle"
-      >
-        <Col xs={22} sm={20} md={16} lg={12} xl={8}>
-=======
     <Row justify="center" align="middle" className="login-view">
       <Col xs={22} sm={20} md={16} lg={12} xl={8}>
         <Card className="login-content">
->>>>>>> upstream/master
           <h3>Try logging in to view the dataset.</h3>
           <LoginForm layout="horizontal" onLoggedIn={onLoggedIn} />
         </Card>
