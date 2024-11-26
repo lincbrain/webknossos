@@ -173,23 +173,18 @@ jobs:
               return $s
             }
             retry sh -c 'echo $DOCKER_TOKEN | docker login -u $DOCKER_USER --password-stdin'
-            retry docker-compose push webknossos
-            retry docker-compose push webknossos-datastore
-            retry docker-compose push webknossos-tracingstore
-            if [ -n "$CIRCLE_BRANCH" ]; then
-              docker tag \
-                lincbrain/webknossos:${DOCKER_TAG} \
-                lincbrain/webknossos:${NORMALIZED_BRANCH}
-              retry docker push lincbrain/webknossos:${NORMALIZED_BRANCH}
-              docker tag \
-                lincbrain/webknossos-datastore:${DOCKER_TAG} \
-                lincbrain/webknossos-datastore:${NORMALIZED_BRANCH}
-              retry docker push lincbrain/webknossos-datastore:${NORMALIZED_BRANCH}
-              docker tag \
-                lincbrain/webknossos-tracingstore:${DOCKER_TAG} \
-                lincbrain/webknossos-tracingstore:${NORMALIZED_BRANCH}
-              retry docker push lincbrain/webknossos-tracingstore:${NORMALIZED_BRANCH}
-            fi
+            docker tag \
+              lincbrain/webknossos:${DOCKER_TAG} \
+              lincbrain/webknossos:${NORMALIZED_BRANCH}
+            retry docker push lincbrain/webknossos:${NORMALIZED_BRANCH}
+            docker tag \
+              lincbrain/webknossos-datastore:${DOCKER_TAG} \
+              lincbrain/webknossos-datastore:${NORMALIZED_BRANCH}
+            retry docker push lincbrain/webknossos-datastore:${NORMALIZED_BRANCH}
+            docker tag \
+              lincbrain/webknossos-tracingstore:${DOCKER_TAG} \
+              lincbrain/webknossos-tracingstore:${NORMALIZED_BRANCH}
+            retry docker push lincbrain/webknossos-tracingstore:${NORMALIZED_BRANCH}
             docker logout
       - run:
           name: Report coverage
