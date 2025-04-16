@@ -81,7 +81,7 @@ errorShots/
 flow-coverage/
 
 
-# Sublime 
+# Sublime
 *.sublime-project
 *.sublime-workspace
 
@@ -92,7 +92,7 @@ coverage-ts
 **/screenshots/*.diff.png
 **/screenshots/*.new.png
 
-# Yarn 
+# Yarn
 .yarn/*
 !.yarn/cache
 !.yarn/patches
@@ -101,3 +101,5 @@ coverage-ts
 !.yarn/sdks
 !.yarn/versions
 tools/proxy/.yarn/*
+
+task-definition.json

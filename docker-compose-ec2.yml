@@ -134,3 +134,10 @@ services:
 networks:
   webknossos_default:
     external: true
+
+
+aws efs create-mount-target --file-system-id fs-0e6268b0d22315c10 --subnet-id subnet-0ee67c445bba4b41f --security-groups sg-049da872ed5d3039f
+
+aws efs create-mount-target --file-system-id fs-0e6268b0d22315c10 --subnet-id subnet-0f8c1603dae3d3350 --security-groups sg-049da872ed5d3039f
+
+aws efs create-mount-target --file-system-id fs-0e6268b0d22315c10 --subnet-id subnet-053252c4146eac9fa --security-groups sg-049da872ed5d3039f
