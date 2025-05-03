@@ -1,43 +1,45 @@
-import _ from "lodash";
-import { connect } from "react-redux";
-import * as React from "react";
-import * as THREE from "three";
 import { InputMouse } from "libs/input";
+import { V3 } from "libs/mjs";
+import TrackballControls from "libs/trackball_controls";
+import * as Utils from "libs/utils";
+import _ from "lodash";
 import {
-  type AnnotationTool,
-  AnnotationToolEnum,
   type OrthoView,
-  OrthoViews,
   type OrthoViewMap,
+  OrthoViews,
   type Point2,
   type Vector3,
 } from "oxalis/constants";
-import { V3 } from "libs/mjs";
+import CameraController from "oxalis/controller/camera_controller";
+import { handleOpenContextMenu } from "oxalis/controller/combinations/skeleton_handlers";
+import {
+  ProofreadToolController,
+  SkeletonToolController,
+} from "oxalis/controller/combinations/tool_controls";
 import { getPosition } from "oxalis/model/accessors/flycam_accessor";
-import { getViewportScale, getInputCatcherRect } from "oxalis/model/accessors/view_mode_accessor";
+import { getActiveNode, getNodePosition } from "oxalis/model/accessors/skeletontracing_accessor";
+import { AnnotationTool } from "oxalis/model/accessors/tool_accessor";
+import { getInputCatcherRect, getViewportScale } from "oxalis/model/accessors/view_mode_accessor";
+import { getActiveSegmentationTracing } from "oxalis/model/accessors/volumetracing_accessor";
 import { setPositionAction } from "oxalis/model/actions/flycam_actions";
 import {
-  setViewportAction,
-  setTDCameraAction,
-  setTDCameraWithoutTimeTrackingAction,
-  zoomTDViewAction,
+  moveTDViewByVectorWithoutTimeTrackingAction,
   moveTDViewXAction,
   moveTDViewYAction,
-  moveTDViewByVectorWithoutTimeTrackingAction,
+  setTDCameraAction,
+  setTDCameraWithoutTimeTrackingAction,
+  setViewportAction,
+  zoomTDViewAction,
 } from "oxalis/model/actions/view_mode_actions";
-import { getActiveNode, getNodePosition } from "oxalis/model/accessors/skeletontracing_accessor";
-import { voxelToUnit } from "oxalis/model/scaleinfo";
-import CameraController from "oxalis/controller/camera_controller";
-import type PlaneView from "oxalis/view/plane_view";
-import type { CameraData, OxalisState, Tracing } from "oxalis/store";
-import Store from "oxalis/store";
-import TrackballControls from "libs/trackball_controls";
-import * as Utils from "libs/utils";
-import { ProofreadTool, SkeletonTool } from "oxalis/controller/combinations/tool_controls";
-import { handleOpenContextMenu } from "oxalis/controller/combinations/skeleton_handlers";
-import type { VoxelSize } from "types/api_flow_types";
 import { setActiveCellAction } from "oxalis/model/actions/volumetracing_actions";
-import { getActiveSegmentationTracing } from "oxalis/model/accessors/volumetracing_accessor";
+import { voxelToUnit } from "oxalis/model/scaleinfo";
+import type { CameraData, OxalisState, StoreAnnotation } from "oxalis/store";
+import Store from "oxalis/store";
+import type PlaneView from "oxalis/view/plane_view";
+import * as React from "react";
+import { connect } from "react-redux";
+import * as THREE from "three";
+import type { VoxelSize } from "types/api_types";
 
 export function threeCameraToCameraData(camera: THREE.OrthographicCamera): CameraData {
   const { position, up, near, far, left, right, top, bottom } = camera;
@@ -65,9 +67,9 @@ function getTDViewMouseControlsSkeleton(planeView: PlaneView): Record<string, an
       isTouch: boolean,
       activeTool: AnnotationTool,
     ) =>
-      activeTool === AnnotationToolEnum.PROOFREAD
-        ? ProofreadTool.onLeftClick(planeView, pos, plane, event, isTouch)
-        : SkeletonTool.onLeftClick(
+      activeTool === AnnotationTool.PROOFREAD
+        ? ProofreadToolController.onLeftClick(planeView, pos, plane, event, isTouch)
+        : SkeletonToolController.onLeftClick(
             planeView,
             pos,
             event.shiftKey,
@@ -83,7 +85,7 @@ const INVALID_ACTIVE_NODE_ID = -1;
 type OwnProps = {
   cameras: OrthoViewMap<THREE.OrthographicCamera>;
   planeView?: PlaneView;
-  tracing?: Tracing;
+  annotation?: StoreAnnotation;
 };
 type StateProps = {
   voxelSize: VoxelSize;
@@ -92,8 +94,8 @@ type StateProps = {
 type Props = OwnProps & StateProps;
 
 function maybeGetActiveNodeFromProps(props: Props) {
-  return props.tracing?.skeleton?.activeNodeId != null
-    ? props.tracing.skeleton.activeNodeId
+  return props.annotation?.skeleton?.activeNodeId != null
+    ? props.annotation.skeleton.activeNodeId
     : INVALID_ACTIVE_NODE_ID;
 }
 
@@ -114,13 +116,13 @@ class TDController extends React.PureComponent<Props> {
     if (
       maybeGetActiveNodeFromProps(this.props) !== maybeGetActiveNodeFromProps(prevProps) &&
       maybeGetActiveNodeFromProps(this.props) !== INVALID_ACTIVE_NODE_ID &&
-      this.props.tracing &&
-      this.props.tracing.skeleton
+      this.props.annotation &&
+      this.props.annotation.skeleton
     ) {
       // The rotation center of this viewport is not updated to the new position after selecting a node in the viewport.
       // This happens because the selection of the node does not trigger a call to setTargetAndFixPosition directly.
       // Thus we do it manually whenever the active node changes.
-      const activeNode = getActiveNode(this.props.tracing.skeleton);
+      const activeNode = getActiveNode(this.props.annotation.skeleton);
       if (activeNode) {
         this.setTargetAndFixPosition(getNodePosition(activeNode, Store.getState()));
       }
@@ -182,7 +184,7 @@ class TDController extends React.PureComponent<Props> {
 
   getTDViewMouseControls(): Record<string, any> {
     const skeletonControls =
-      this.props.tracing?.skeleton != null && this.props.planeView != null
+      this.props.annotation?.skeleton != null && this.props.planeView != null
         ? getTDViewMouseControlsSkeleton(this.props.planeView)
         : null;
     const controls = {
@@ -205,7 +207,10 @@ class TDController extends React.PureComponent<Props> {
           return;
         }
 
-        this.props.planeView.throttledPerformMeshHitTest([position.x, position.y]);
+        this.props.planeView.performMeshHitTest([position.x, position.y]);
+      },
+      out: () => {
+        this.props.planeView?.clearLastMeshHitTest();
       },
       leftClick: (pos: Point2, plane: OrthoView, event: MouseEvent, isTouch: boolean) => {
         if (skeletonControls != null) {
@@ -232,10 +237,7 @@ class TDController extends React.PureComponent<Props> {
         }
         const { hitPosition } = intersection;
 
-        const unscaledPosition = V3.divide3(
-          hitPosition.toArray() as Vector3,
-          this.props.voxelSize.factor,
-        );
+        const unscaledPosition = V3.divide3(hitPosition, this.props.voxelSize.factor);
 
         if (event.shiftKey) {
           Store.dispatch(setPositionAction(unscaledPosition));
@@ -276,16 +278,16 @@ class TDController extends React.PureComponent<Props> {
 
   getMeshIntersection(pos: Point2) {
     if (this.props.planeView == null) return null;
-    const intersection = this.props.planeView.performMeshHitTest([pos.x, pos.y]);
-    if (intersection == null) {
+    const hitResult = this.props.planeView.performMeshHitTest([pos.x, pos.y]);
+    if (hitResult == null) {
       return null;
     }
-    const meshId: number | null = intersection
-      ? _.get(intersection.object.parent, "segmentId", null)
+    const meshId: number | null = hitResult
+      ? _.get(hitResult.node.parent, "segmentId", null)
       : null;
-    const unmappedSegmentId: number | null = _.get(intersection?.object, "unmappedSegmentId", null);
-    const meshClickedPosition = intersection ? (intersection.point.toArray() as Vector3) : null;
-    return { meshId, unmappedSegmentId, meshClickedPosition, hitPosition: intersection.point };
+    const unmappedSegmentId: number | null = hitResult?.unmappedSegmentId || null;
+    const meshClickedPosition = hitResult ? hitResult.point : null;
+    return { meshId, unmappedSegmentId, meshClickedPosition, hitPosition: hitResult.point };
   }
 
   setTargetAndFixPosition = (position?: Vector3): void => {

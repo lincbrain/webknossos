@@ -1,48 +1,49 @@
 import Maybe from "data.maybe";
-import _ from "lodash";
 import update from "immutability-helper";
-import type {
-  OxalisState,
-  SkeletonTracing,
-  Edge,
-  Node,
-  MutableNode,
-  Tree,
-  MutableTree,
-  BranchPoint,
-  MutableBranchPoint,
-  MutableCommentType,
-  TreeMap,
-  MutableTreeMap,
-  CommentType,
-  TreeGroup,
-  RestrictionsAndSettings,
-  MutableTreeGroup,
-  MutableNodeMap,
-} from "oxalis/store";
-import type {
-  ServerSkeletonTracingTree,
-  ServerNode,
-  ServerBranchPoint,
-  MetadataEntryProto,
-} from "types/api_flow_types";
-import {
-  getSkeletonTracing,
-  getActiveNodeFromTree,
-  getTree,
-  getActiveTree,
-  getActiveTreeGroup,
-  findTreeByNodeId,
-  mapGroupsToGenerator,
-} from "oxalis/model/accessors/skeletontracing_accessor";
 import ColorGenerator from "libs/color_generator";
+import DiffableMap from "libs/diffable_map";
+import { V3 } from "libs/mjs";
+import * as Utils from "libs/utils";
+import _ from "lodash";
 import { type TreeType, TreeTypeEnum, type Vector3 } from "oxalis/constants";
 import Constants, { NODE_ID_REF_REGEX } from "oxalis/constants";
-import DiffableMap from "libs/diffable_map";
+import {
+  findTreeByNodeId,
+  getActiveNodeFromTree,
+  getActiveTree,
+  getActiveTreeGroup,
+  getSkeletonTracing,
+  getTree,
+  mapGroups,
+  mapGroupsToGenerator,
+} from "oxalis/model/accessors/skeletontracing_accessor";
 import EdgeCollection from "oxalis/model/edge_collection";
-import * as Utils from "libs/utils";
-import { V3 } from "libs/mjs";
-import type { AdditionalCoordinate } from "types/api_flow_types";
+import type {
+  BranchPoint,
+  CommentType,
+  Edge,
+  MutableBranchPoint,
+  MutableCommentType,
+  MutableNode,
+  MutableNodeMap,
+  MutableTree,
+  MutableTreeGroup,
+  MutableTreeMap,
+  Node,
+  OxalisState,
+  RestrictionsAndSettings,
+  SkeletonTracing,
+  Tree,
+  TreeGroup,
+  TreeMap,
+} from "oxalis/store";
+import type {
+  MetadataEntryProto,
+  ServerBranchPoint,
+  ServerNode,
+  ServerSkeletonTracingTree,
+} from "types/api_types";
+import type { AdditionalCoordinate } from "types/api_types";
 
 export function generateTreeName(state: OxalisState, timestamp: number, treeId: number) {
   let user = "";
@@ -54,7 +55,7 @@ export function generateTreeName(state: OxalisState, timestamp: number, treeId: 
 
   let prefix = "Tree";
 
-  if (state.tracing.annotationType === "Explorational") {
+  if (state.annotation.annotationType === "Explorational") {
     // Get YYYY-MM-DD string
     const creationDate = new Date(timestamp).toJSON().slice(0, 10);
     prefix = `explorative_${creationDate}_${user}_`;
@@ -121,7 +122,7 @@ export function createNode(
   additionalCoordinates: AdditionalCoordinate[] | null,
   rotation: Vector3,
   viewport: number,
-  resolution: number,
+  mag: number,
   timestamp: number,
 ): Maybe<[Node, EdgeCollection]> {
   const activeNodeMaybe = getActiveNodeFromTree(skeletonTracing, tree);
@@ -145,7 +146,7 @@ export function createNode(
     radius,
     rotation,
     viewport,
-    resolution,
+    mag,
     id: nextNewId,
     timestamp,
     bitDepth: state.datasetConfiguration.fourBit ? 4 : 8,
@@ -169,7 +170,7 @@ export function deleteNode(
   node: Node,
   timestamp: number,
 ): Maybe<[TreeMap, number, number | null | undefined, number]> {
-  return getSkeletonTracing(state.tracing).chain((skeletonTracing) => {
+  return getSkeletonTracing(state.annotation).chain((skeletonTracing) => {
     // Delete node and possible branchpoints/comments
     const activeTree = update(tree, {
       nodes: {
@@ -225,7 +226,7 @@ export function deleteEdge(
   targetNode: Node,
   timestamp: number,
 ): Maybe<[TreeMap, number | null | undefined]> {
-  return getSkeletonTracing(state.tracing).chain((skeletonTracing) => {
+  return getSkeletonTracing(state.annotation).chain((skeletonTracing) => {
     if (sourceTree.treeId !== targetTree.treeId) {
       // The two selected nodes are in different trees
       console.error(
@@ -376,7 +377,7 @@ function splitTreeByNodes(
           // in this reducer for performance reasons.
           newTree = immutableNewTree as any as Tree;
           intermediateState = update(intermediateState, {
-            tracing: {
+            annotation: {
               skeleton: {
                 trees: {
                   [newTree.treeId]: {
@@ -488,7 +489,7 @@ export function createTree(
   edgesAreVisible: boolean = true,
   metadata: MetadataEntryProto[] = [],
 ): Maybe<Tree> {
-  return getSkeletonTracing(state.tracing).chain((skeletonTracing) => {
+  return getSkeletonTracing(state.annotation).chain((skeletonTracing) => {
     // Create a new tree id and name
     const newTreeId = getMaximumTreeId(skeletonTracing.trees) + 1;
     const newTreeName = name || generateTreeName(state, timestamp, newTreeId);
@@ -560,7 +561,10 @@ export function addTreesAndGroups(
   );
   const hasInvalidNodeIds = getMinimumNodeId(trees) < Constants.MIN_NODE_ID;
   const needsReassignedIds =
-    Object.keys(skeletonTracing.trees).length > 0 || hasInvalidTreeIds || hasInvalidNodeIds;
+    Object.keys(skeletonTracing.trees).length > 0 ||
+    skeletonTracing.treeGroups.length > 0 ||
+    hasInvalidTreeIds ||
+    hasInvalidNodeIds;
 
   if (!needsReassignedIds) {
     // Without reassigning ids, the code is considerably faster.
@@ -630,20 +634,22 @@ export function addTreesAndGroups(
 
   return Maybe.Just([newTrees, treeGroups, newNodeId - 1]);
 }
-export function deleteTree(
+export function deleteTrees(
   skeletonTracing: SkeletonTracing,
-  tree: Tree,
+  treeIds: number[],
   suppressActivatingNextNode: boolean = false,
 ): Maybe<[TreeMap, number | null | undefined, number | null | undefined, number]> {
-  // Delete tree
-  const newTrees = _.omit(skeletonTracing.trees, tree.treeId);
+  if (treeIds.length === 0) return Maybe.Nothing();
+  // Delete trees
+  const newTrees = _.omit(skeletonTracing.trees, treeIds);
 
   let newActiveTreeId = null;
   let newActiveNodeId = null;
 
   if (_.size(newTrees) > 0 && !suppressActivatingNextNode) {
-    // Setting the tree active whose id is the next highest compared to the id of the deleted tree.
-    newActiveTreeId = getNearestTreeId(tree.treeId, newTrees);
+    // Setting the tree active whose id is the next highest compared to the ids of the deleted trees.
+    const maximumTreeId = _.max(treeIds) || Constants.MIN_TREE_ID;
+    newActiveTreeId = getNearestTreeId(maximumTreeId, newTrees);
     // @ts-expect-error ts-migrate(2571) FIXME: Object is of type 'unknown'.
     newActiveNodeId = +_.first(Array.from(newTrees[newActiveTreeId].nodes.keys())) || null;
   }
@@ -655,12 +661,19 @@ export function mergeTrees(
   trees: TreeMap,
   sourceNodeId: number,
   targetNodeId: number,
+  treeType: TreeType,
 ): [TreeMap, number, number] | null {
   // targetTree will be removed (the content will be merged into sourceTree).
   const sourceTree = findTreeByNodeId(trees, sourceNodeId); // should be activeTree, so that the active tree "survives"
   const targetTree = findTreeByNodeId(trees, targetNodeId);
 
-  if (targetTree == null || sourceTree == null || targetTree === sourceTree) {
+  if (
+    targetTree == null ||
+    sourceTree == null ||
+    targetTree === sourceTree ||
+    sourceTree.type !== treeType ||
+    targetTree.type !== treeType
+  ) {
     return null;
   }
 
@@ -757,7 +770,7 @@ export function toggleAllTreesReducer(
     updateTreeObject[treeId] = isVisibleUpdater;
   });
   return update(state, {
-    tracing: {
+    annotation: {
       skeleton: {
         trees: updateTreeObject,
       },
@@ -801,9 +814,37 @@ export function toggleTreeGroupReducer(
   });
 
   return update(state, {
-    tracing: {
+    annotation: {
       skeleton: {
         trees: updateTreeObject,
+      },
+    },
+  });
+}
+
+export function setExpandedTreeGroups(
+  state: OxalisState,
+  shouldBeExpanded: (arg: TreeGroup) => boolean,
+): OxalisState {
+  const currentTreeGroups = state.annotation?.skeleton?.treeGroups;
+  if (currentTreeGroups == null) {
+    return state;
+  }
+  const newGroups = mapGroups(currentTreeGroups, (group) => {
+    const updatedIsExpanded = shouldBeExpanded(group);
+    if (updatedIsExpanded !== group.isExpanded) {
+      return { ...group, isExpanded: updatedIsExpanded };
+    } else {
+      return group;
+    }
+  });
+
+  return update(state, {
+    annotation: {
+      skeleton: {
+        treeGroups: {
+          $set: newGroups,
+        },
       },
     },
   });
@@ -817,7 +858,7 @@ function serverNodeToMutableNode(n: ServerNode): MutableNode {
     rotation: Utils.point3ToVector3(n.rotation),
     bitDepth: n.bitDepth,
     viewport: n.viewport,
-    resolution: n.resolution,
+    mag: n.mag,
     radius: n.radius,
     timestamp: n.createdTimestamp,
     interpolation: n.interpolation,

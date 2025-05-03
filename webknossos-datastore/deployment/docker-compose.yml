@@ -2,7 +2,7 @@ version: "2.1"
 
 services:
   webknossos-datastore:
-    image: scalableminds/webknossos-datastore:${DATASTORE_TAG}
+    image: akanzer/webknossos-datastore:${DATASTORE_TAG}
     command:
       - -J-Xmx20G
       - -J-Xms1G

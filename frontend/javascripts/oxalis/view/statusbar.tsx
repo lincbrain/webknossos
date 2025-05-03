@@ -1,43 +1,47 @@
-import { useDispatch, useSelector } from "react-redux";
-import React, { useCallback, useState } from "react";
-import { WarningOutlined, MoreOutlined, DownloadOutlined } from "@ant-design/icons";
+import { DownloadOutlined, MoreOutlined, WarningOutlined } from "@ant-design/icons";
+import FastTooltip from "components/fast_tooltip";
+import { formatCountToDataAmountUnit } from "libs/format_utils";
+import { V3 } from "libs/mjs";
+import { useInterval } from "libs/react_helpers";
+import { useKeyPress } from "libs/react_hooks";
+import message from "messages";
+import messages from "messages";
 import type { Vector3 } from "oxalis/constants";
 import { AltOrOptionKey, MappingStatusEnum, OrthoViews } from "oxalis/constants";
+import {
+  type ActionDescriptor,
+  getToolControllerForAnnotationTool,
+} from "oxalis/controller/combinations/tool_controls";
 import {
   getMappingInfoOrNull,
   getVisibleSegmentationLayer,
   hasVisibleUint64Segmentation,
 } from "oxalis/model/accessors/dataset_accessor";
-import { NumberInputPopoverSetting } from "oxalis/view/components/setting_input_views";
-import { useKeyPress } from "libs/react_hooks";
-import { getActiveResolutionInfo } from "oxalis/model/accessors/flycam_accessor";
-import { setActiveCellAction } from "oxalis/model/actions/volumetracing_actions";
-import {
-  setActiveNodeAction,
-  setActiveTreeAction,
-} from "oxalis/model/actions/skeletontracing_actions";
-import { formatCountToDataAmountUnit } from "libs/format_utils";
-import message from "messages";
-import {
-  type ActionDescriptor,
-  getToolClassForAnnotationTool,
-} from "oxalis/controller/combinations/tool_controls";
+import { getActiveMagInfo } from "oxalis/model/accessors/flycam_accessor";
+import { AnnotationTool, adaptActiveToolToShortcuts } from "oxalis/model/accessors/tool_accessor";
 import {
   calculateGlobalPos,
   isPlaneMode as getIsPlaneMode,
 } from "oxalis/model/accessors/view_mode_accessor";
-import { adaptActiveToolToShortcuts } from "oxalis/model/accessors/tool_accessor";
-import { V3 } from "libs/mjs";
-import type { OxalisState } from "oxalis/store";
 import {
   getActiveSegmentationTracing,
   getReadableNameForLayerName,
+  getSegmentationLayerForTracing,
 } from "oxalis/model/accessors/volumetracing_accessor";
+import {
+  setActiveNodeAction,
+  setActiveTreeAction,
+} from "oxalis/model/actions/skeletontracing_actions";
+import { setActiveCellAction } from "oxalis/model/actions/volumetracing_actions";
+import { getSupportedValueRangeForElementClass } from "oxalis/model/bucket_data_handling/data_rendering_logic";
 import { getGlobalDataConnectionInfo } from "oxalis/model/data_connection_info";
-import { useInterval } from "libs/react_helpers";
-import type { AdditionalCoordinate } from "types/api_flow_types";
-import FastTooltip from "components/fast_tooltip";
 import { Store } from "oxalis/singletons";
+import type { OxalisState } from "oxalis/store";
+import { NumberInputPopoverSetting } from "oxalis/view/components/setting_input_views";
+import React, { useCallback, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import type { AdditionalCoordinate } from "types/api_types";
+import { CommandPalette } from "./components/command_palette";
 
 const lineColor = "rgba(255, 255, 255, 0.67)";
 const moreIconStyle = {
@@ -45,7 +49,7 @@ const moreIconStyle = {
   color: lineColor,
 };
 const moreLinkStyle = {
-  marginLeft: 10,
+  marginLeft: 25,
   marginRight: "auto",
 };
 
@@ -151,39 +155,48 @@ function RightClickShortcut({ actionDescriptor }: { actionDescriptor: ActionDesc
   );
 }
 
+const getMoreShortcutsInfo = () => {
+  return (
+    <>
+      <CommandPalette label={<div style={{ marginLeft: 25 }}>[Ctrl+P] Commands</div>} />
+      {moreShortcutsLink}
+    </>
+  );
+};
+
+const moreShortcutsLink = (
+  <a
+    target="_blank"
+    href="https://docs.webknossos.org/webknossos/ui/keyboard_shortcuts.html"
+    rel="noopener noreferrer"
+    style={moreLinkStyle}
+  >
+    <FastTooltip title="More Shortcuts">
+      <MoreOutlined rotate={90} style={moreIconStyle} />
+    </FastTooltip>
+  </a>
+);
+
 function ShortcutsInfo() {
   const activeTool = useSelector((state: OxalisState) => state.uiInformation.activeTool);
-  const useLegacyBindings = useSelector(
-    (state: OxalisState) => state.userConfiguration.useLegacyBindings,
-  );
+  const userConfiguration = useSelector((state: OxalisState) => state.userConfiguration);
   const isPlaneMode = useSelector((state: OxalisState) => getIsPlaneMode(state));
   const isShiftPressed = useKeyPress("Shift");
   const isControlOrMetaPressed = useKeyPress("ControlOrMeta");
   const isAltPressed = useKeyPress("Alt");
-  const hasSkeleton = useSelector((state: OxalisState) => state.tracing.skeleton != null);
+  const hasSkeleton = useSelector((state: OxalisState) => state.annotation.skeleton != null);
   const isTDViewportActive = useSelector(
     (state: OxalisState) => state.viewModeData.plane.activeViewport === OrthoViews.TDView,
-  );
-
-  const moreShortcutsLink = (
-    <a
-      target="_blank"
-      href="https://docs.webknossos.org/webknossos/keyboard_shortcuts.html"
-      rel="noopener noreferrer"
-      style={moreLinkStyle}
-    >
-      <FastTooltip title="More Shortcuts">
-        <MoreOutlined rotate={90} style={moreIconStyle} />
-      </FastTooltip>
-    </a>
   );
 
   if (!isPlaneMode) {
     let actionDescriptor = null;
     if (hasSkeleton && isShiftPressed) {
-      actionDescriptor = getToolClassForAnnotationTool("SKELETON").getActionDescriptors(
-        "SKELETON",
-        useLegacyBindings,
+      actionDescriptor = getToolControllerForAnnotationTool(
+        AnnotationTool.SKELETON,
+      ).getActionDescriptors(
+        AnnotationTool.SKELETON,
+        userConfiguration,
         isShiftPressed,
         isControlOrMetaPressed,
         isAltPressed,
@@ -310,7 +323,7 @@ function ShortcutsInfo() {
           </span>{" "}
           Rotation
         </span>
-        {moreShortcutsLink}
+        {getMoreShortcutsInfo()}
       </React.Fragment>
     );
   }
@@ -321,9 +334,10 @@ function ShortcutsInfo() {
     isControlOrMetaPressed,
     isAltPressed,
   );
-  const actionDescriptor = getToolClassForAnnotationTool(adaptedTool).getActionDescriptors(
+  const toolController = getToolControllerForAnnotationTool(adaptedTool);
+  const actionDescriptor = toolController.getActionDescriptors(
     adaptedTool,
-    useLegacyBindings,
+    userConfiguration,
     isShiftPressed,
     isControlOrMetaPressed,
     isAltPressed,
@@ -351,7 +365,7 @@ function ShortcutsInfo() {
         Rotate 3D View
       </span>
       <ZoomShortcut />
-      {moreShortcutsLink}
+      {getMoreShortcutsInfo()}
     </React.Fragment>
   );
 }
@@ -403,16 +417,18 @@ function maybeLabelWithSegmentationWarning(isUint64SegmentationVisible: boolean,
 }
 
 function Infos() {
-  const isSkeletonAnnotation = useSelector((state: OxalisState) => state.tracing.skeleton != null);
+  const isSkeletonAnnotation = useSelector(
+    (state: OxalisState) => state.annotation.skeleton != null,
+  );
   const activeVolumeTracing = useSelector((state: OxalisState) =>
     getActiveSegmentationTracing(state),
   );
   const activeCellId = activeVolumeTracing?.activeCellId;
   const activeNodeId = useSelector((state: OxalisState) =>
-    state.tracing.skeleton ? state.tracing.skeleton.activeNodeId : null,
+    state.annotation.skeleton ? state.annotation.skeleton.activeNodeId : null,
   );
   const activeTreeId = useSelector((state: OxalisState) =>
-    state.tracing.skeleton ? state.tracing.skeleton.activeTreeId : null,
+    state.annotation.skeleton ? state.annotation.skeleton.activeTreeId : null,
   );
   const dispatch = useDispatch();
 
@@ -429,6 +445,15 @@ function Infos() {
     [dispatch],
   );
 
+  const validSegmentIdRange = useSelector((state: OxalisState) => {
+    if (!activeVolumeTracing) {
+      return null;
+    }
+    const segmentationLayer = getSegmentationLayerForTracing(state, activeVolumeTracing);
+    const elementClass = segmentationLayer.elementClass;
+    return getSupportedValueRangeForElementClass(elementClass);
+  });
+
   const isUint64SegmentationVisible = useSelector(hasVisibleUint64Segmentation);
 
   return (
@@ -437,12 +462,13 @@ function Infos() {
       <span className="info-element">
         <DownloadSpeedometer />
       </span>
-      {activeVolumeTracing != null ? (
+      {activeVolumeTracing != null && validSegmentIdRange != null ? (
         <span className="info-element">
           <NumberInputPopoverSetting
             value={activeCellId}
             label={maybeLabelWithSegmentationWarning(isUint64SegmentationVisible, "Active Segment")}
-            min={0}
+            min={validSegmentIdRange[0]}
+            max={validSegmentIdRange[1]}
             detailedLabel={maybeLabelWithSegmentationWarning(
               isUint64SegmentationVisible,
               "Change Active Segment ID",
@@ -471,7 +497,7 @@ function Infos() {
           />
         </span>
       ) : null}
-      <ResolutionInfo />
+      <MagnificationInfo />
     </React.Fragment>
   );
 }
@@ -498,22 +524,21 @@ function DownloadSpeedometer() {
   );
 }
 
-function ResolutionInfo() {
-  const { representativeResolution, isActiveResolutionGlobal } =
-    useSelector(getActiveResolutionInfo);
+function MagnificationInfo() {
+  const { representativeMag, isActiveMagGlobal } = useSelector(getActiveMagInfo);
 
   const renderMagTooltipContent = useCallback(() => {
     const state = Store.getState();
-    const { activeMagOfEnabledLayers } = getActiveResolutionInfo(state);
+    const { activeMagOfEnabledLayers } = getActiveMagInfo(state);
     const dataset = state.dataset;
-    const tracing = state.tracing;
+    const annotation = state.annotation;
 
     return (
-      <>
+      <div style={{ width: 200 }}>
         Rendered magnification per layer:
         <ul>
           {Object.entries(activeMagOfEnabledLayers).map(([layerName, mag]) => {
-            const readableName = getReadableNameForLayerName(dataset, tracing, layerName);
+            const readableName = getReadableNameForLayerName(dataset, annotation, layerName);
 
             return (
               <li key={layerName}>
@@ -522,11 +547,12 @@ function ResolutionInfo() {
             );
           })}
         </ul>
-      </>
+        {messages["dataset.mag_explanation"]}
+      </div>
     );
   }, []);
 
-  if (representativeResolution == null) {
+  if (representativeMag == null) {
     return null;
   }
 
@@ -534,12 +560,12 @@ function ResolutionInfo() {
     <span className="info-element">
       <img
         src="/assets/images/icon-statusbar-downsampling.svg"
-        className="resolution-status-bar-icon"
-        alt="Resolution"
+        className="mag-status-bar-icon"
+        alt="Magnification"
       />{" "}
       <FastTooltip dynamicRenderer={renderMagTooltipContent} placement="top">
-        {representativeResolution.join("-")}
-        {isActiveResolutionGlobal ? "" : "*"}{" "}
+        {representativeMag.join("-")}
+        {isActiveMagGlobal ? "" : "*"}{" "}
       </FastTooltip>
     </span>
   );

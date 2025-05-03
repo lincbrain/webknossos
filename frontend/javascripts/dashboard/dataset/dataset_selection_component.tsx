@@ -1,4 +1,4 @@
-import { getDatasets } from "admin/admin_rest_api";
+import { getDatasets } from "admin/rest_api";
 import AsyncSelect from "components/async_select";
 
 // Usage of AsyncSelect
@@ -12,7 +12,7 @@ async function fetchDatasets(query: string): Promise<DatasetSelectionValue[]> {
 
   return datasets.map((d) => ({
     label: d.name,
-    value: d.name,
+    value: d.id,
   }));
 }
 

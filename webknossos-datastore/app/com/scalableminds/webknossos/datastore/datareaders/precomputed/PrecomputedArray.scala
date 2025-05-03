@@ -1,5 +1,6 @@
 package com.scalableminds.webknossos.datastore.datareaders.precomputed
 
+import com.scalableminds.util.accesscontext.TokenContext
 import com.scalableminds.util.cache.AlfuCache
 import com.scalableminds.util.io.ZipIO
 import com.scalableminds.util.tools.{Fox, FoxImplicits, JsonHelper}
@@ -14,24 +15,23 @@ import java.nio.ByteOrder
 import java.nio.ByteBuffer
 import scala.collection.immutable.NumericRange
 import scala.concurrent.ExecutionContext
-import com.scalableminds.util.tools.Fox.{box2Fox, option2Fox}
 import net.liftweb.common.Box
 import ucar.ma2.{Array => MultiArray}
 
-object PrecomputedArray extends LazyLogging {
-  def open(
-      magPath: VaultPath,
-      dataSourceId: DataSourceId,
-      layerName: String,
-      axisOrderOpt: Option[AxisOrder],
-      channelIndex: Option[Int],
-      additionalAxes: Option[Seq[AdditionalAxis]],
-      sharedChunkContentsCache: AlfuCache[String, MultiArray])(implicit ec: ExecutionContext): Fox[PrecomputedArray] =
+object PrecomputedArray extends LazyLogging with FoxImplicits {
+  def open(magPath: VaultPath,
+           dataSourceId: DataSourceId,
+           layerName: String,
+           axisOrderOpt: Option[AxisOrder],
+           channelIndex: Option[Int],
+           additionalAxes: Option[Seq[AdditionalAxis]],
+           sharedChunkContentsCache: AlfuCache[String, MultiArray])(implicit ec: ExecutionContext,
+                                                                    tc: TokenContext): Fox[PrecomputedArray] =
     for {
       headerBytes <- (magPath.parent / PrecomputedHeader.FILENAME_INFO)
         .readBytes() ?~> s"Could not read header at ${PrecomputedHeader.FILENAME_INFO}"
-      rootHeader <- JsonHelper.parseAndValidateJson[PrecomputedHeader](headerBytes) ?~> "Could not parse array header"
-      scale <- rootHeader.getScale(magPath.basename) ?~> s"Header does not contain scale ${magPath.basename}"
+      rootHeader <- JsonHelper.parseAs[PrecomputedHeader](headerBytes).toFox ?~> "Could not parse array header"
+      scale <- rootHeader.getScale(magPath.basename).toFox ?~> s"Header does not contain scale ${magPath.basename}"
       scaleHeader = PrecomputedScaleHeader(scale, rootHeader)
       _ <- DatasetArray.assertChunkSizeLimit(scaleHeader.bytesPerChunk)
       array <- tryo(
@@ -44,7 +44,7 @@ object PrecomputedArray extends LazyLogging {
           channelIndex,
           additionalAxes,
           sharedChunkContentsCache
-        )) ?~> "Could not open neuroglancerPrecomputed array"
+        )).toFox ?~> "Could not open neuroglancerPrecomputed array"
     } yield array
 }
 
@@ -136,10 +136,10 @@ class PrecomputedArray(vaultPath: VaultPath,
       case _ => bytes
     }
 
-  private def getShardIndex(shardPath: VaultPath)(implicit ec: ExecutionContext): Fox[Array[Byte]] =
+  private def getShardIndex(shardPath: VaultPath)(implicit ec: ExecutionContext, tc: TokenContext): Fox[Array[Byte]] =
     shardIndexCache.getOrLoad(shardPath, readShardIndex)
 
-  private def readShardIndex(shardPath: VaultPath)(implicit ec: ExecutionContext): Fox[Array[Byte]] =
+  private def readShardIndex(shardPath: VaultPath)(implicit ec: ExecutionContext, tc: TokenContext): Fox[Array[Byte]] =
     shardPath.readBytes(Some(shardIndexRange))
 
   private def parseShardIndex(index: Array[Byte]): Seq[(Long, Long)] =
@@ -227,31 +227,35 @@ class PrecomputedArray(vaultPath: VaultPath,
   }
 
   private def getMinishardIndex(shardPath: VaultPath, minishardNumber: Int)(
-      implicit ec: ExecutionContext): Fox[Array[(Long, Long, Long)]] =
+      implicit ec: ExecutionContext,
+      tc: TokenContext): Fox[Array[(Long, Long, Long)]] =
     minishardIndexCache.getOrLoad((shardPath, minishardNumber), readMinishardIndex)
 
   private def readMinishardIndex(vaultPathAndMinishardNumber: (VaultPath, Int))(
-      implicit ec: ExecutionContext): Fox[Array[(Long, Long, Long)]] = {
+      implicit ec: ExecutionContext,
+      tc: TokenContext): Fox[Array[(Long, Long, Long)]] = {
     val (vaultPath, minishardNumber) = vaultPathAndMinishardNumber
     for {
       index <- getShardIndex(vaultPath)
       parsedIndex = parseShardIndex(index)
       minishardIndexRange = getMinishardIndexRange(minishardNumber, parsedIndex)
       indexRaw <- vaultPath.readBytes(Some(minishardIndexRange))
-      minishardIndex <- parseMinishardIndex(indexRaw)
+      minishardIndex <- parseMinishardIndex(indexRaw).toFox
     } yield minishardIndex
   }
 
   private def getChunkRange(chunkId: Long, minishardIndex: Array[(Long, Long, Long)])(
       implicit ec: ExecutionContext): Fox[NumericRange.Exclusive[Long]] =
     for {
-      chunkSpecification <- Fox.option2Fox(minishardIndex.find(_._1 == chunkId)) ?~> s"Could not find chunk id $chunkId in minishard index"
+      chunkSpecification <- minishardIndex
+        .find(_._1 == chunkId)
+        .toFox ?~> s"Could not find chunk id $chunkId in minishard index"
       chunkStart = (shardIndexRange.end) + chunkSpecification._2
       chunkEnd = (shardIndexRange.end) + chunkSpecification._2 + chunkSpecification._3
     } yield Range.Long(chunkStart, chunkEnd, 1)
 
-  override def getShardedChunkPathAndRange(chunkIndex: Array[Int])(
-      implicit ec: ExecutionContext): Fox[(VaultPath, NumericRange[Long])] = {
+  override def getShardedChunkPathAndRange(
+      chunkIndex: Array[Int])(implicit ec: ExecutionContext, tc: TokenContext): Fox[(VaultPath, NumericRange[Long])] = {
     val chunkIdentifier = getHashForChunk(chunkIndex)
     val minishardInfo = getMinishardInfo(chunkIdentifier)
     val shardPath = getPathForShard(minishardInfo._1)

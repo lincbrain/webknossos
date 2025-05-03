@@ -2,9 +2,10 @@ package models.user
 
 import com.scalableminds.util.accesscontext.{DBAccessContext, GlobalAccessContext}
 import com.scalableminds.util.cache.AlfuCache
+import com.scalableminds.util.objectid.ObjectId
 import com.scalableminds.util.security.SCrypt
 import com.scalableminds.util.time.Instant
-import com.scalableminds.util.tools.{Fox, FoxImplicits}
+import com.scalableminds.util.tools.{Fox, FoxImplicits, JsonHelper}
 import com.scalableminds.webknossos.datastore.models.datasource.DatasetViewConfiguration.DatasetViewConfiguration
 import com.scalableminds.webknossos.datastore.models.datasource.LayerViewConfiguration.LayerViewConfiguration
 import com.typesafe.scalalogging.LazyLogging
@@ -23,7 +24,7 @@ import play.silhouette.api.util.PasswordInfo
 import play.silhouette.impl.providers.CredentialsProvider
 import security.{PasswordHasher, TokenDAO}
 import utils.sql.SqlEscaping
-import utils.{ObjectId, WkConf}
+import utils.WkConf
 
 import javax.inject.Inject
 import scala.concurrent.{ExecutionContext, Future}
@@ -64,8 +65,8 @@ class UserService @Inject()(conf: WkConf,
     multiUser._lastLoggedInIdentity match {
       case Some(userId) =>
         for {
-          maybeLastLoggedInIdentity <- userDAO.findOne(userId).futureBox
-          identity <- maybeLastLoggedInIdentity match {
+          lastLoggedInIdentityBox <- userDAO.findOne(userId).shiftBox
+          identity <- lastLoggedInIdentityBox match {
             case Full(user) if !user.isDeactivated => Fox.successful(user)
             case _                                 => userDAO.findFirstByMultiUser(multiUser._id)
           }
@@ -75,8 +76,8 @@ class UserService @Inject()(conf: WkConf,
 
   def assertNotInOrgaYet(multiUserId: ObjectId, organizationId: String): Fox[Unit] =
     for {
-      userBox <- userDAO.findOneByOrgaAndMultiUser(organizationId, multiUserId)(GlobalAccessContext).futureBox
-      _ <- bool2Fox(userBox.isEmpty) ?~> "organization.alreadyJoined"
+      userBox <- userDAO.findOneByOrgaAndMultiUser(organizationId, multiUserId)(GlobalAccessContext).shiftBox
+      _ <- Fox.fromBool(userBox.isEmpty) ?~> "organization.alreadyJoined"
     } yield ()
 
   def assertIsSuperUser(user: User)(implicit ctx: DBAccessContext): Fox[Unit] =
@@ -139,7 +140,7 @@ class UserService @Inject()(conf: WkConf,
       multiUser <- multiUserDAO.findOne(originalUser._multiUser)
       existingIdentity: Box[User] <- userDAO
         .findOneByOrgaAndMultiUser(organizationId, originalUser._multiUser)(GlobalAccessContext)
-        .futureBox
+        .shiftBox
       _ <- if (multiUser.isSuperUser && existingIdentity.isEmpty) {
         joinOrganization(originalUser, organizationId, autoActivate = true, isAdmin = true, isUnlisted = true)
       } else Fox.successful(())
@@ -237,14 +238,11 @@ class UserService @Inject()(conf: WkConf,
 
   def updateDatasetViewConfiguration(
       user: User,
-      datasetName: String,
-      organizationId: String,
+      datasetId: ObjectId,
       datasetConfiguration: DatasetViewConfiguration,
       layerConfiguration: Option[JsValue])(implicit ctx: DBAccessContext, m: MessagesProvider): Fox[Unit] =
     for {
-      dataset <- datasetDAO.findOneByNameAndOrganization(datasetName, organizationId)(GlobalAccessContext) ?~> Messages(
-        "dataset.notFound",
-        datasetName)
+      dataset <- datasetDAO.findOne(datasetId)(GlobalAccessContext) ?~> Messages("dataset.notFound", datasetId)
       layerMap = layerConfiguration.flatMap(_.asOpt[Map[String, JsValue]]).getOrElse(Map.empty)
       _ <- Fox.serialCombined(layerMap.toList) {
         case (name, config) =>
@@ -281,11 +279,11 @@ class UserService @Inject()(conf: WkConf,
     userExperiencesDAO.findAllExperiencesForUser(_user)
 
   def teamMembershipsFor(_user: ObjectId): Fox[List[TeamMembership]] =
-    userDAO.findTeamMembershipsForUser(_user)
+    userDAO.findTeamMembershipsForUser(_user) ?~> "user.team.memberships.failed"
 
   def teamManagerMembershipsFor(_user: ObjectId): Fox[List[TeamMembership]] =
     for {
-      teamMemberships <- teamMembershipsFor(_user)
+      teamMemberships <- teamMembershipsFor(_user) ?~> "user.team.memberships.failed"
     } yield teamMemberships.filter(_.isTeamManager)
 
   def teamManagerTeamIdsFor(_user: ObjectId): Fox[List[ObjectId]] =
@@ -381,7 +379,7 @@ class UserService @Inject()(conf: WkConf,
           .map(valueAndIndex =>
             (parseArrayLiteral(userCompactInfo.experienceDomainsAsArrayLiteral)(valueAndIndex._2),
              Json.toJsFieldJsValueWrapper(valueAndIndex._1.toInt))): _*)
-      novelUserExperienceInfos <- Json.parse(userCompactInfo.novelUserExperienceInfos).validate[JsObject]
+      novelUserExperienceInfos <- JsonHelper.parseAs[JsObject](userCompactInfo.novelUserExperienceInfos).toFox
     } yield {
       Json.obj(
         "id" -> userCompactInfo._id,

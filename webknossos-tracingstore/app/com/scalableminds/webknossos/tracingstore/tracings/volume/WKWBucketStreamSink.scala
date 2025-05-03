@@ -11,14 +11,15 @@ import com.scalableminds.webknossos.datastore.dataformats.wkw.{
 }
 import com.scalableminds.webknossos.datastore.models.BucketPosition
 import com.scalableminds.webknossos.datastore.models.datasource.DataLayer
-import com.scalableminds.util.tools.ByteUtils
+import com.scalableminds.util.tools.{ByteUtils, Fox, FoxImplicits}
 
 import java.io.DataOutputStream
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext
 
 class WKWBucketStreamSink(val layer: DataLayer, tracingHasFallbackLayer: Boolean)
     extends WKWDataFormatHelper
-    with VolumeBucketReversionHelper
+    with ReversionHelper
+    with FoxImplicits
     with ByteUtils {
 
   def apply(bucketStream: Iterator[(BucketPosition, Array[Byte])], mags: Seq[Vec3Int])(
@@ -27,7 +28,7 @@ class WKWBucketStreamSink(val layer: DataLayer, tracingHasFallbackLayer: Boolean
     val header = WKWHeader(1, DataLayer.bucketLength, ChunkType.LZ4, voxelType, numChannels)
     bucketStream.flatMap {
       case (bucket, data) =>
-        val skipBucket = if (tracingHasFallbackLayer) isRevertedBucket(data) else isAllZero(data)
+        val skipBucket = if (tracingHasFallbackLayer) isRevertedElement(data) else isAllZero(data)
         if (skipBucket) {
           // If the tracing has no fallback segmentation, all-zero buckets can be omitted entirely
           None
@@ -36,13 +37,13 @@ class WKWBucketStreamSink(val layer: DataLayer, tracingHasFallbackLayer: Boolean
           Some(
             NamedFunctionStream(
               filePath,
-              os => Future.successful(WKWFile.write(os, header, Array(data).iterator))
+              os => WKWFile.write(os, header, Array(data).iterator).toFox
             ))
         }
       case _ => None
     } ++ mags.map { mag =>
       NamedFunctionStream(f"${mag.toMagLiteral(allowScalar = true)}/$FILENAME_HEADER_WKW",
-                          os => Future.successful(header.writeTo(new DataOutputStream(os), isHeaderFile = true)))
+                          os => Fox.successful(header.writeTo(new DataOutputStream(os), isHeaderFile = true)))
     }
   }
 

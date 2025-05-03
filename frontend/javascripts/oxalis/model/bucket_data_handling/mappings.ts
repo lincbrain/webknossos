@@ -1,20 +1,20 @@
+import { message } from "antd";
+import type UpdatableTexture from "libs/UpdatableTexture";
+import { CuckooTableUint32 } from "libs/cuckoo/cuckoo_table_uint32";
+import { CuckooTableUint64 } from "libs/cuckoo/cuckoo_table_uint64";
+import Toast from "libs/toast";
+import { diffMaps } from "libs/utils";
 import _ from "lodash";
+import memoizeOne from "memoize-one";
 import {
-  getMappings,
-  getMappingInfo,
   getElementClass,
+  getMappingInfo,
+  getMappings,
 } from "oxalis/model/accessors/dataset_accessor";
-import { listenToStoreProperty } from "oxalis/model/helpers/listener_helpers";
 import { finishMappingInitializationAction } from "oxalis/model/actions/settings_actions";
+import { listenToStoreProperty } from "oxalis/model/helpers/listener_helpers";
 import type { Mapping, NumberLike } from "oxalis/store";
 import Store from "oxalis/store";
-import type UpdatableTexture from "libs/UpdatableTexture";
-import { CuckooTableUint64 } from "libs/cuckoo/cuckoo_table_uint64";
-import { CuckooTableUint32 } from "libs/cuckoo/cuckoo_table_uint32";
-import { message } from "antd";
-import { diffMaps } from "libs/utils";
-import memoizeOne from "memoize-one";
-import Toast from "libs/toast";
 
 // With the default load factor of 0.9, this suffices for mapping
 // ~15M uint32 ids.
@@ -61,6 +61,7 @@ class Mappings {
   cuckooTable: CuckooTableUint64 | CuckooTableUint32 | null = null;
   previousMapping: Mapping | null | undefined = null;
   currentKeyCount: number = 0;
+  storePropertyUnsubscribers: Array<() => void> = [];
 
   constructor(layerName: string) {
     this.layerName = layerName;
@@ -76,13 +77,15 @@ class Mappings {
       ? new CuckooTableUint64(MAPPING_TEXTURE_WIDTH)
       : new CuckooTableUint32(MAPPING_TEXTURE_WIDTH);
 
-    listenToStoreProperty(
-      (state) =>
-        getMappingInfo(state.temporaryConfiguration.activeMappingByLayer, this.layerName).mapping,
-      (mapping) => {
-        this.updateMappingTextures(mapping);
-      },
-      true,
+    this.storePropertyUnsubscribers.push(
+      listenToStoreProperty(
+        (state) =>
+          getMappingInfo(state.temporaryConfiguration.activeMappingByLayer, this.layerName).mapping,
+        (mapping) => {
+          this.updateMappingTextures(mapping);
+        },
+        true,
+      ),
     );
   }
 
@@ -150,6 +153,11 @@ class Mappings {
     }
 
     return this.cuckooTable;
+  }
+
+  destroy() {
+    this.storePropertyUnsubscribers.forEach((fn) => fn());
+    this.storePropertyUnsubscribers = [];
   }
 }
 

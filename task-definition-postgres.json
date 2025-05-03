@@ -1,0 +1,67 @@
+{
+    "family": "webknossos-task",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": ["FARGATE"],
+    "executionRoleArn": "arn:aws:iam::151312473579:role/WebKnossosEcsExecutionRole",
+    "taskRoleArn": "arn:aws:iam::151312473579:role/WebKnossosTaskRole",
+    "cpu": "8192",
+    "memory": "61440",
+    "containerDefinitions": [
+      {
+        "name": "postgres",
+        "image": "postgres:15-bullseye",
+        "cpu": 1024,
+        "memory": 2048,
+        "essential": true,
+        "environment": [
+          { "name": "POSTGRES_DB", "value": "webknossos" },
+          { "name": "POSTGRES_USER", "value": "postgres" },
+          { "name": "POSTGRES_PASSWORD", "value": "postgres" }
+        ],
+        "command": ["postgres", "-c", "log_statement=all"],
+        "logConfiguration": {
+          "logDriver": "awslogs",
+          "options": {
+            "awslogs-group": "/ecs/webknossos-cluster",
+            "awslogs-region": "us-east-2",
+            "awslogs-stream-prefix": "postgres"
+          }
+        },
+        "portMappings": [
+          {
+            "containerPort": 5432,
+            "protocol": "tcp"
+          }
+        ],
+        "mountPoints": [
+          {
+            "sourceVolume": "binaryData",
+            "containerPath": "/binaryData"
+          },
+          {
+            "sourceVolume": "postgres-data",
+            "containerPath": "/postgres-data/var/lib/postgresql/data"
+          }
+        ]
+      }
+    ],
+    "volumes": [
+      {
+        "name": "binaryData",
+        "efsVolumeConfiguration": {
+          "fileSystemId": "fs-0dc01efe6a77e4cd8",
+          "rootDirectory": "/binaryData",
+          "transitEncryption": "ENABLED"
+        }
+      },
+      {
+        "name": "postgres-data",
+        "efsVolumeConfiguration": {
+          "fileSystemId": "fs-0b8c991a5003f176d",
+          "rootDirectory": "/",
+          "transitEncryption": "ENABLED"
+        }
+      }
+    ]
+  }
+  

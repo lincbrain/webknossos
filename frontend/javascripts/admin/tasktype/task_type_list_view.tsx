@@ -1,21 +1,3 @@
-import { Link } from "react-router-dom";
-import { PropTypes } from "@scalableminds/prop-types";
-import { Table, Tag, Spin, Button, Input, App } from "antd";
-import Markdown from "libs/markdown_adapter";
-import * as React from "react";
-import _ from "lodash";
-import { AsyncLink } from "components/async_clickables";
-import type { APITaskType } from "types/api_flow_types";
-import {
-  getTaskTypes,
-  deleteTaskType as deleteTaskTypeAPI,
-  downloadAnnotation,
-} from "admin/admin_rest_api";
-import { handleGenericError } from "libs/error_handling";
-import LinkButton from "components/link_button";
-import Persistence from "libs/persistence";
-import * as Utils from "libs/utils";
-import messages from "messages";
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -24,7 +6,25 @@ import {
   PlusOutlined,
   ScheduleOutlined,
 } from "@ant-design/icons";
+import { PropTypes } from "@scalableminds/prop-types";
+import {
+  deleteTaskType as deleteTaskTypeAPI,
+  downloadAnnotation,
+  getTaskTypes,
+} from "admin/rest_api";
+import { App, Button, Input, Spin, Table, Tag } from "antd";
+import { AsyncLink } from "components/async_clickables";
+import LinkButton from "components/link_button";
+import { handleGenericError } from "libs/error_handling";
+import Markdown from "libs/markdown_adapter";
+import Persistence from "libs/persistence";
+import * as Utils from "libs/utils";
+import _ from "lodash";
+import messages from "messages";
+import * as React from "react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import type { APITaskType } from "types/api_types";
 
 const { Column } = Table;
 const { Search } = Input;
@@ -238,9 +238,12 @@ function TaskTypeListView({ initialSearchValue }: Props) {
             fixed="right"
             render={(__, taskType: APITaskType) => (
               <span>
-                <Link to={`/annotations/CompoundTaskType/${taskType.id}`} title="View">
+                <Link
+                  to={`/annotations/CompoundTaskType/${taskType.id}`}
+                  title="Show a compound annotation of all finished tasks for this taskType"
+                >
                   <EyeOutlined className="icon-margin-right" />
-                  View
+                  View merged
                 </Link>
                 <br />
                 <Link to={`/taskTypes/${taskType.id}/edit`} title="Edit taskType">
@@ -270,8 +273,7 @@ function TaskTypeListView({ initialSearchValue }: Props) {
                   Download
                 </AsyncLink>
                 <br />
-                <LinkButton onClick={_.partial(deleteTaskType, taskType)}>
-                  <DeleteOutlined className="icon-margin-right" />
+                <LinkButton onClick={_.partial(deleteTaskType, taskType)} icon={<DeleteOutlined />}>
                   Delete
                 </LinkButton>
               </span>

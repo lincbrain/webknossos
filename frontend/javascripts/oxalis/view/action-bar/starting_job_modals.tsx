@@ -1,82 +1,95 @@
-import React, { useState } from "react";
-import type { APIJob, APIDataLayer } from "types/api_flow_types";
-import {
-  Modal,
-  Select,
-  Button,
-  Form,
-  Row,
-  Space,
-  Radio,
-  Card,
-  Tooltip,
-  Alert,
-  Tabs,
-  Switch,
-  type FormInstance,
-  Checkbox,
-} from "antd";
-import {
-  startNucleiInferralJob,
-  startMaterializingVolumeAnnotationJob,
-  startNeuronInferralJob,
-  startMitochondriaInferralJob,
-  runInferenceJob,
-  startAlignSectionsJob,
-  getAiModels,
-} from "admin/admin_rest_api";
-import { useDispatch, useSelector } from "react-redux";
+import { InfoCircleOutlined } from "@ant-design/icons";
 import { DatasetNameFormItem } from "admin/dataset/dataset_components";
-import { getColorLayers, getSegmentationLayers } from "oxalis/model/accessors/dataset_accessor";
 import {
-  getActiveSegmentationTracingLayer,
-  getReadableNameOfVolumeLayer,
-} from "oxalis/model/accessors/volumetracing_accessor";
-import { getUserBoundingBoxesFromState } from "oxalis/model/accessors/tracing_accessor";
+  type JobCreditCostInfo,
+  getAiModels,
+  getJobCreditCost,
+  getOrganization,
+  runNeuronInferenceWithAiModelJob,
+  startAlignSectionsJob,
+  startMaterializingVolumeAnnotationJob,
+  startMitochondriaInferralJob,
+  startNeuronInferralJob,
+  startNucleiInferralJob,
+} from "admin/rest_api";
+import {
+  Alert,
+  Button,
+  Card,
+  Checkbox,
+  Col,
+  Collapse,
+  Form,
+  type FormInstance,
+  InputNumber,
+  Modal,
+  Radio,
+  Row,
+  Select,
+  Space,
+  Switch,
+  Tabs,
+  Tooltip,
+} from "antd";
+import { LayerSelectionFormItem } from "components/layer_selection";
+import { Slider } from "components/slider";
+import features from "features";
+import { formatCreditsString, formatVoxels } from "libs/format_utils";
+import { V3 } from "libs/mjs";
+import { useFetch, useGuardedFetch } from "libs/react_helpers";
 import Toast from "libs/toast";
-import type { OxalisState, UserBoundingBox } from "oxalis/store";
-import { ControlModeEnum, Unicode, type Vector3 } from "oxalis/constants";
-import { Model, Store } from "oxalis/singletons";
 import {
   clamp,
   computeArrayFromBoundingBox,
   computeBoundingBoxFromBoundingBoxObject,
+  pluralize,
   rgbToHex,
 } from "libs/utils";
-import { getBaseSegmentationName } from "oxalis/view/right-border-tabs/segments_tab/segments_view_helper";
-import { V3 } from "libs/mjs";
-import type { ResolutionInfo } from "oxalis/model/helpers/resolution_info";
-import { isBoundingBoxExportable } from "./download_modal_view";
-import features from "features";
+import _ from "lodash";
+import { ControlModeEnum, Unicode, type Vector3 } from "oxalis/constants";
+import { getColorLayers, getSegmentationLayers } from "oxalis/model/accessors/dataset_accessor";
+import { getUserBoundingBoxesFromState } from "oxalis/model/accessors/tracing_accessor";
+import {
+  getActiveSegmentationTracingLayer,
+  getReadableNameOfVolumeLayer,
+} from "oxalis/model/accessors/volumetracing_accessor";
+import {
+  setActiveOrganizationAction,
+  setActiveOrganizationsCreditBalance,
+} from "oxalis/model/actions/organization_actions";
 import { setAIJobModalStateAction } from "oxalis/model/actions/ui_actions";
-import { InfoCircleOutlined } from "@ant-design/icons";
+import BoundingBox from "oxalis/model/bucket_data_handling/bounding_box";
+import type { MagInfo } from "oxalis/model/helpers/mag_info";
+import { Model, Store } from "oxalis/singletons";
+import type { OxalisState, UserBoundingBox } from "oxalis/store";
+import { getBaseSegmentationName } from "oxalis/view/right-border-tabs/segments_tab/segments_view_helper";
+import React, { useEffect, useState, useMemo } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { type APIDataLayer, type APIJob, APIJobType } from "types/api_types";
 import {
   CollapsibleWorkflowYamlEditor,
   TrainAiModelFromAnnotationTab,
 } from "../jobs/train_ai_model";
-import { LayerSelectionFormItem } from "components/layer_selection";
-import { useGuardedFetch } from "libs/react_helpers";
-import _ from "lodash";
 import DEFAULT_PREDICT_WORKFLOW from "./default-predict-workflow-template";
-import { Slider } from "components/slider";
+import { isBoundingBoxExportable } from "./download_modal_view";
 
 const { ThinSpace } = Unicode;
 
 export type StartAIJobModalState =
-  | "neuron_inferral"
-  | "nuclei_inferral"
-  | "mitochondria_inferral"
+  | APIJobType.INFER_NEURONS
+  | APIJobType.INFER_NUCLEI
+  | APIJobType.INFER_MITOCHONDRIA
   | "invisible";
 
 // "materialize_volume_annotation" is only used in this module
 const jobNameToImagePath = {
-  neuron_inferral: "neuron_inferral_example.jpg",
-  nuclei_inferral: "nuclei_inferral_example.jpg",
-  mitochondria_inferral: "mito_inferral_example.jpg",
+  infer_neurons: "neuron_inferral_example.jpg",
+  infer_nuclei: "nuclei_inferral_example.jpg",
+  infer_mitochondria: "mito_inferral_example.jpg",
   align_sections: "align_example.png",
   materialize_volume_annotation: "materialize_volume_annotation_example.jpg",
   invisible: "",
-  inference: "",
+  infer_with_model: "",
 } as const;
 
 type Props = {
@@ -96,8 +109,9 @@ type JobApiCallArgsType = {
 };
 type StartJobFormProps = Props & {
   jobApiCall: (arg0: JobApiCallArgsType, form: FormInstance<any>) => Promise<void | APIJob>;
-  jobName: keyof typeof jobNameToImagePath;
+  jobName: APIJobType;
   description: React.ReactNode;
+  jobSpecificInputFields?: React.ReactNode | undefined;
   isBoundingBoxConfigurable?: boolean;
   chooseSegmentationLayer?: boolean;
   suggestedDatasetSuffix: string;
@@ -106,22 +120,26 @@ type StartJobFormProps = Props & {
   buttonLabel?: string | null;
   isSkeletonSelectable?: boolean;
   showWorkflowYaml?: boolean;
+  jobCreditCostPerGVx?: number;
 };
 
 type BoundingBoxSelectionProps = {
   isBoundingBoxConfigurable?: boolean;
   userBoundingBoxes: UserBoundingBox[];
+  isSuperUser: boolean;
+  showVolume: boolean;
   onChangeSelectedBoundingBox: (bBoxId: number | null) => void;
   value: number | null;
 };
 
-function renderUserBoundingBox(bbox: UserBoundingBox | null | undefined) {
+function renderUserBoundingBox(bbox: UserBoundingBox | null | undefined, showVolume: boolean) {
   if (!bbox) {
     return null;
   }
 
   const upscaledColor = bbox.color.map((colorPart) => colorPart * 255) as any as Vector3;
   const colorAsHexString = rgbToHex(upscaledColor);
+  const volumeInVx = new BoundingBox(bbox.boundingBox).getVolume();
   return (
     <>
       <div
@@ -132,7 +150,8 @@ function renderUserBoundingBox(bbox: UserBoundingBox | null | undefined) {
           marginRight: 6,
         }}
       />
-      {bbox.name} ({computeArrayFromBoundingBox(bbox.boundingBox).join(", ")})
+      {bbox.name} ({computeArrayFromBoundingBox(bbox.boundingBox).join(", ")}
+      {showVolume ? `, ${formatVoxels(volumeInVx)}` : ""})
     </>
   );
 }
@@ -150,11 +169,13 @@ function ExperimentalInferenceAlert() {
 export function BoundingBoxSelection({
   userBoundingBoxes,
   setSelectedBoundingBoxId,
+  showVolume = false,
   style,
   value,
 }: {
   userBoundingBoxes: UserBoundingBox[];
   setSelectedBoundingBoxId?: (boundingBoxId: number | null) => void;
+  showVolume?: boolean;
   style?: React.CSSProperties;
   value: number | null;
 }): JSX.Element {
@@ -173,7 +194,7 @@ export function BoundingBoxSelection({
     >
       {userBoundingBoxes.map((userBB) => (
         <Select.Option key={userBB.id} value={userBB.id}>
-          {renderUserBoundingBox(userBB)}
+          {renderUserBoundingBox(userBB, showVolume)}
         </Select.Option>
       ))}
     </Select>
@@ -183,6 +204,8 @@ export function BoundingBoxSelection({
 function BoundingBoxSelectionFormItem({
   isBoundingBoxConfigurable,
   userBoundingBoxes,
+  isSuperUser,
+  showVolume = false,
   onChangeSelectedBoundingBox,
   value: selectedBoundingBoxId,
 }: BoundingBoxSelectionProps): JSX.Element {
@@ -218,7 +241,7 @@ function BoundingBoxSelectionFormItem({
           },
           {
             validator: (_rule, value) => {
-              if (!isBoundingBoxConfigurable) return Promise.resolve();
+              if (!isBoundingBoxConfigurable || isSuperUser) return Promise.resolve();
 
               const selectedBoundingBox = userBoundingBoxes.find((bbox) => bbox.id === value);
               let rejectionReason = "";
@@ -245,6 +268,7 @@ function BoundingBoxSelectionFormItem({
           userBoundingBoxes={userBoundingBoxes}
           setSelectedBoundingBoxId={onChangeSelectedBoundingBox}
           value={selectedBoundingBoxId}
+          showVolume={showVolume}
         />
       </Form.Item>
     </div>
@@ -252,16 +276,16 @@ function BoundingBoxSelectionFormItem({
 }
 
 export function MagSlider({
-  resolutionInfo,
+  magnificationInfo,
   value,
   onChange,
 }: {
-  resolutionInfo: ResolutionInfo;
+  magnificationInfo: MagInfo;
   value: Vector3;
   onChange: (v: Vector3) => void;
 }) {
-  // Use `getResolutionsWithIndices` because returns a sorted list
-  const allMags = resolutionInfo.getResolutionsWithIndices();
+  // Use `getMagsWithIndices` because returns a sorted list
+  const allMags = magnificationInfo.getMagsWithIndices();
 
   return (
     <Slider
@@ -375,15 +399,15 @@ function RunAiModelTab({ aIJobModalState }: { aIJobModalState: string }) {
           <Space align="center">
             <Radio.Button
               className="aIJobSelection"
-              checked={aIJobModalState === "neuron_inferral"}
-              onClick={() => dispatch(setAIJobModalStateAction("neuron_inferral"))}
+              checked={aIJobModalState === APIJobType.INFER_NEURONS}
+              onClick={() => dispatch(setAIJobModalStateAction(APIJobType.INFER_NEURONS))}
             >
               <Card bordered={false}>
                 <Space direction="vertical" size="small">
                   <Row className="ai-job-title">Neuron segmentation</Row>
                   <Row>
                     <img
-                      src={`/assets/images/${jobNameToImagePath.neuron_inferral}`}
+                      src={`/assets/images/${jobNameToImagePath.infer_neurons}`}
                       alt={"Neuron segmentation example"}
                       style={centerImageStyle}
                     />
@@ -395,15 +419,15 @@ function RunAiModelTab({ aIJobModalState }: { aIJobModalState: string }) {
               <Radio.Button
                 className="aIJobSelection"
                 disabled={!isSuperUser}
-                checked={aIJobModalState === "mitochondria_inferral"}
-                onClick={() => dispatch(setAIJobModalStateAction("mitochondria_inferral"))}
+                checked={aIJobModalState === APIJobType.INFER_MITOCHONDRIA}
+                onClick={() => dispatch(setAIJobModalStateAction(APIJobType.INFER_MITOCHONDRIA))}
               >
                 <Card bordered={false}>
                   <Space direction="vertical" size="small">
                     <Row className="ai-job-title">Mitochondria detection</Row>
                     <Row>
                       <img
-                        src={`/assets/images/${jobNameToImagePath.mitochondria_inferral}`}
+                        src={`/assets/images/${jobNameToImagePath.infer_mitochondria}`}
                         alt={"Mitochondria detection example"}
                         style={centerImageStyle}
                       />
@@ -416,15 +440,15 @@ function RunAiModelTab({ aIJobModalState }: { aIJobModalState: string }) {
               <Radio.Button
                 className="aIJobSelection"
                 disabled
-                checked={aIJobModalState === "nuclei_inferral"}
-                onClick={() => dispatch(setAIJobModalStateAction("nuclei_inferral"))}
+                checked={aIJobModalState === APIJobType.INFER_NUCLEI}
+                onClick={() => dispatch(setAIJobModalStateAction(APIJobType.INFER_NUCLEI))}
               >
                 <Card bordered={false}>
                   <Space direction="vertical" size="small">
                     <Row className="ai-job-title">Nuclei detection</Row>
                     <Row>
                       <img
-                        src={`/assets/images/${jobNameToImagePath.nuclei_inferral}`}
+                        src={`/assets/images/${jobNameToImagePath.infer_nuclei}`}
                         alt={"Nuclei detection example"}
                         style={centerImageStyle}
                       />
@@ -434,10 +458,12 @@ function RunAiModelTab({ aIJobModalState }: { aIJobModalState: string }) {
               </Radio.Button>
             </Tooltip>
           </Space>
-          {aIJobModalState === "neuron_inferral" ? <NeuronSegmentationForm /> : null}
-          {aIJobModalState === "nuclei_inferral" ? <NucleiDetectionForm /> : null}
-          {aIJobModalState === "mitochondria_inferral" ? <MitochondriaSegmentationForm /> : null}
-          {aIJobModalState === "align_sections" ? <AlignSectionsForm /> : null}
+          {aIJobModalState === APIJobType.INFER_NEURONS ? <NeuronSegmentationForm /> : null}
+          {aIJobModalState === APIJobType.INFER_NUCLEI ? <NucleiDetectionForm /> : null}
+          {aIJobModalState === APIJobType.INFER_MITOCHONDRIA ? (
+            <MitochondriaSegmentationForm />
+          ) : null}
+          {aIJobModalState === APIJobType.ALIGN_SECTIONS ? <AlignSectionsForm /> : null}
         </>
       )}
     </Space>
@@ -475,8 +501,8 @@ function AlignmentTab() {
 }
 
 function ShouldUseTreesFormItem() {
-  const tracing = useSelector((state: OxalisState) => state.tracing);
-  const trees = tracing.skeleton ? Object.values(tracing.skeleton.trees) : [];
+  const annotation = useSelector((state: OxalisState) => state.annotation);
+  const trees = annotation.skeleton ? Object.values(annotation.skeleton.trees) : [];
   return (
     <div>
       <Form.Item
@@ -496,13 +522,13 @@ function ShouldUseTreesFormItem() {
           {
             validator: (_rule, checked) => {
               if (checked) {
-                if (tracing.annotationId === "") {
+                if (annotation.annotationId === "") {
                   return Promise.reject(
                     "No annotation was found. Please create an annotation first.",
                   );
                 }
                 if (
-                  tracing.skeleton == null ||
+                  annotation.skeleton == null ||
                   trees.filter((tree) => tree.edges.edgeCount > 0).length === 0
                 ) {
                   return Promise.reject(
@@ -521,22 +547,115 @@ function ShouldUseTreesFormItem() {
   );
 }
 
-function StartJobForm(props: StartJobFormProps) {
-  const isBoundingBoxConfigurable = props.isBoundingBoxConfigurable || false;
-  const isSkeletonSelectable = props.isSkeletonSelectable || false;
-  const chooseSegmentationLayer = props.chooseSegmentationLayer || false;
-  const { handleClose, jobName, jobApiCall, fixedSelectedLayer, title, description } = props;
-  const [form] = Form.useForm();
-  const rawUserBoundingBoxes = useSelector((state: OxalisState) =>
-    getUserBoundingBoxesFromState(state),
+function JobCreditCostInformation({
+  jobCreditCostInfo,
+  jobCreditCostPerGVx,
+}: {
+  jobCreditCostInfo: JobCreditCostInfo | undefined;
+  jobCreditCostPerGVx: number;
+}) {
+  const organizationCreditsFromStore = useSelector(
+    (state: OxalisState) => state.activeOrganization?.creditBalance || "0",
   );
-  const dataset = useSelector((state: OxalisState) => state.dataset);
-  const tracing = useSelector((state: OxalisState) => state.tracing);
-  const activeUser = useSelector((state: OxalisState) => state.activeUser);
-  const colorLayers = getColorLayers(dataset);
-  const layers = chooseSegmentationLayer ? getSegmentationLayers(dataset) : colorLayers;
-  const [useCustomWorkflow, setUseCustomWorkflow] = React.useState(false);
-  const defaultBBForLayers: UserBoundingBox[] = layers.map((layer, index) => {
+  const organizationCredits =
+    jobCreditCostInfo?.organizationCredits || organizationCreditsFromStore;
+  const jobCreditCost = jobCreditCostInfo?.costInCredits;
+  const jobCostInfoString =
+    jobCreditCost != null ? ` and would cost ${formatCreditsString(jobCreditCost)} credits` : "";
+  return (
+    <>
+      <Row style={{ display: "grid", marginBottom: 16 }}>
+        <Alert
+          message={
+            <>
+              Billing for this job is not active during testing phase. This job is billed at{" "}
+              {jobCreditCostPerGVx} {pluralize("credit", jobCreditCostPerGVx)} per Gigavoxel
+              {jobCostInfoString}. Your organization currently has{" "}
+              {formatCreditsString(organizationCredits)} WEBKNOSSOS credits.
+            </>
+          }
+          type="info"
+          showIcon
+        />
+      </Row>
+    </>
+  );
+}
+type SplitMergerEvaluationSettings = {
+  useSparseTracing?: boolean;
+  maxEdgeLength?: number;
+  sparseTubeThresholdInNm?: number;
+  minimumMergerPathLengthInNm?: number;
+};
+
+function CollapsibleSplitMergerEvaluationSettings({
+  isActive = false,
+  setActive,
+}: { isActive: boolean; setActive: (active: boolean) => void }) {
+  return (
+    <Collapse
+      style={{ marginBottom: 8 }}
+      onChange={() => setActive(!isActive)}
+      expandIcon={() => <Checkbox checked={isActive} />}
+      items={[
+        {
+          key: "evaluation",
+          label: "Evaluation Settings",
+          children: (
+            <Row>
+              <Col style={{ width: "100%" }}>
+                <Form.Item
+                  layout="horizontal"
+                  label="Use sparse ground truth tracing"
+                  name={["splitMergerEvaluationSettings", "useSparseTracing"]}
+                  valuePropName="checked"
+                  initialValue={true}
+                  tooltip="The evaluation mode can either be `dense`
+    in case all processes in the volume are annotated in the ground-truth.
+    If not, use the `sparse` mode."
+                >
+                  <Checkbox style={{ width: "100%" }} />
+                </Form.Item>
+                <Form.Item
+                  label="Max edge length in nm"
+                  name={["splitMergerEvaluationSettings", "maxEdgeLength"]}
+                  tooltip="Ground truth tracings can be densified so that
+    nodes are at most max_edge_length nm apart.
+    However, this can also introduce wrong nodes in curved processes."
+                >
+                  <InputNumber style={{ width: "100%" }} placeholder="None" />
+                </Form.Item>
+                <Form.Item
+                  label="Sparse tube threshold in nm"
+                  name={["splitMergerEvaluationSettings", "sparseTubeThresholdInNm"]}
+                  tooltip="Tube threshold for sparse evaluation,
+    determining if a process is too far from the ground-truth."
+                >
+                  <InputNumber style={{ width: "100%" }} placeholder="1000" />
+                </Form.Item>
+                <Form.Item
+                  label="Sparse minimum merger path length in nm"
+                  name={["splitMergerEvaluationSettings", "minimumMergerPathLengthInNm"]}
+                  tooltip="Minimum ground truth path length of a merger component
+    to be counted as a relevant merger (for sparse evaluation).
+    Note, the path length to neighboring nodes of a component is included for this comparison. This optimistic path length
+    estimation makes sure no relevant mergers are ignored."
+                >
+                  <InputNumber style={{ width: "100%" }} placeholder="800" />
+                </Form.Item>
+                <Form.Item name="useAnnotation" initialValue={true} hidden />
+              </Col>
+            </Row>
+          ),
+        },
+      ]}
+      activeKey={isActive ? "evaluation" : []}
+    />
+  );
+}
+
+function getBoundingBoxesForLayers(layers: APIDataLayer[]): UserBoundingBox[] {
+  return layers.map((layer, index) => {
     return {
       id: -1 * index,
       name: `Full ${layer.name} layer`,
@@ -545,7 +664,93 @@ function StartJobForm(props: StartJobFormProps) {
       isVisible: true,
     };
   });
+}
+
+function useCurrentlySelectedBoundingBox(
+  userBoundingBoxes: UserBoundingBox[],
+  defaultBBForLayers: UserBoundingBox[],
+  layers: APIDataLayer[],
+  form: FormInstance,
+  isBoundingBoxConfigurable: boolean,
+): UserBoundingBox | undefined {
+  const selectedBoundingBoxId = Form.useWatch("boundingBoxId", form);
+  const currentlySelectedLayerName = Form.useWatch("layerName", form);
+  const [currentlySelectedBoundingBox, setCurrentlySelectedBoundingBox] = useState<
+    UserBoundingBox | undefined
+  >(undefined);
+  // userBoundingBoxes, defaultBBForLayers, layers are different objects with each calls,
+  // but they shouldn't be able to change while the modal is open
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
+  useEffect(() => {
+    const currentSelectedLayer = layers.find((layer) => layer.name === currentlySelectedLayerName);
+    const indexOfLayer = currentSelectedLayer ? layers.indexOf(currentSelectedLayer) : -1;
+    const newCurrentlySelectedBoundingBox = isBoundingBoxConfigurable
+      ? userBoundingBoxes.find((bbox) => bbox.id === selectedBoundingBoxId)
+      : indexOfLayer >= 0
+        ? defaultBBForLayers[indexOfLayer]
+        : undefined;
+    setCurrentlySelectedBoundingBox(newCurrentlySelectedBoundingBox);
+  }, [selectedBoundingBoxId, currentlySelectedLayerName, isBoundingBoxConfigurable]);
+  return currentlySelectedBoundingBox;
+}
+
+function StartJobForm(props: StartJobFormProps) {
+  const isBoundingBoxConfigurable = props.isBoundingBoxConfigurable || false;
+  const isSkeletonSelectable = props.isSkeletonSelectable || false;
+  const chooseSegmentationLayer = props.chooseSegmentationLayer || false;
+  const {
+    handleClose,
+    jobName,
+    jobApiCall,
+    fixedSelectedLayer,
+    title,
+    description,
+    jobCreditCostPerGVx,
+    jobSpecificInputFields,
+  } = props;
+  const [form] = Form.useForm();
+  const rawUserBoundingBoxes = useSelector((state: OxalisState) =>
+    getUserBoundingBoxesFromState(state),
+  );
+
+  const dispatch = useDispatch();
+  const dataset = useSelector((state: OxalisState) => state.dataset);
+  const annotation = useSelector((state: OxalisState) => state.annotation);
+  const activeUser = useSelector((state: OxalisState) => state.activeUser);
+  const isActiveUserSuperUser = activeUser?.isSuperUser || false;
+  const colorLayers = getColorLayers(dataset);
+  const organizationCredits = useSelector(
+    (state: OxalisState) => state.activeOrganization?.creditBalance || "0",
+  );
+  const layers = chooseSegmentationLayer ? getSegmentationLayers(dataset) : colorLayers;
+  const [useCustomWorkflow, setUseCustomWorkflow] = React.useState(false);
+  const defaultBBForLayers = useMemo(() => getBoundingBoxesForLayers(layers), [layers]);
   const userBoundingBoxes = defaultBBForLayers.concat(rawUserBoundingBoxes);
+  const boundingBoxForJob = useCurrentlySelectedBoundingBox(
+    userBoundingBoxes,
+    defaultBBForLayers,
+    layers,
+    form,
+    isBoundingBoxConfigurable,
+  );
+  const jobCreditCostInfo = useFetch<JobCreditCostInfo | undefined>(
+    async () =>
+      boundingBoxForJob && jobCreditCostPerGVx != null
+        ? await getJobCreditCost(
+            jobName,
+            computeArrayFromBoundingBox(boundingBoxForJob.boundingBox),
+          )
+        : undefined,
+    undefined,
+    [boundingBoxForJob, jobName],
+  );
+
+  useEffect(() => {
+    const newAmountOfCredits = jobCreditCostInfo?.organizationCredits;
+    if (newAmountOfCredits && organizationCredits !== newAmountOfCredits) {
+      dispatch(setActiveOrganizationsCreditBalance(newAmountOfCredits));
+    }
+  }, [jobCreditCostInfo, dispatch, organizationCredits]);
 
   const startJob = async ({
     layerName,
@@ -581,13 +786,25 @@ function StartJobForm(props: StartJobFormProps) {
         newDatasetName,
         selectedLayer,
         selectedBoundingBox,
-        annotationId: useAnnotation ? tracing.annotationId : undefined,
+        annotationId: useAnnotation ? annotation.annotationId : undefined,
         useCustomWorkflow,
       };
       const apiJob = await jobApiCall(jobArgs, form);
 
       if (!apiJob) {
         return;
+      }
+      if (jobCreditCostPerGVx != null && activeUser?.organization) {
+        // As the job did cost credits, refetch the organization to have a correct credit balance.
+        try {
+          const updatedOrganization = await getOrganization(activeUser?.organization);
+          dispatch(setActiveOrganizationAction(updatedOrganization));
+        } catch (error) {
+          Toast.error(
+            "There was an error while reloading the available credits. Consider reloading the page.",
+          );
+          console.error("Failed to refresh organization credits.", error);
+        }
       }
 
       Toast.info(
@@ -637,20 +854,29 @@ function StartJobForm(props: StartJobFormProps) {
         layers={layers}
         fixedLayerName={fixedSelectedLayer?.name}
         getReadableNameForLayer={(layer) =>
-          getReadableNameOfVolumeLayer(layer, tracing) || layer.name
+          getReadableNameOfVolumeLayer(layer, annotation) || layer.name
         }
       />
       <BoundingBoxSelectionFormItem
         isBoundingBoxConfigurable={isBoundingBoxConfigurable}
         userBoundingBoxes={userBoundingBoxes}
+        isSuperUser={isActiveUserSuperUser}
         onChangeSelectedBoundingBox={(bBoxId) => form.setFieldsValue({ boundingBoxId: bBoxId })}
         value={form.getFieldValue("boundingBoxId")}
+        showVolume={jobCreditCostPerGVx != null}
       />
+      {jobSpecificInputFields}
       {isSkeletonSelectable && <ShouldUseTreesFormItem />}
       {props.showWorkflowYaml ? (
         <CollapsibleWorkflowYamlEditor
           isActive={useCustomWorkflow}
           setActive={setUseCustomWorkflow}
+        />
+      ) : null}
+      {jobCreditCostPerGVx != null ? (
+        <JobCreditCostInformation
+          jobCreditCostPerGVx={jobCreditCostPerGVx}
+          jobCreditCostInfo={jobCreditCostInfo}
         />
       ) : null}
       <div style={{ textAlign: "center" }}>
@@ -669,16 +895,11 @@ export function NucleiDetectionForm() {
     <StartJobForm
       handleClose={() => dispatch(setAIJobModalStateAction("invisible"))}
       buttonLabel="Start AI nuclei detection"
-      jobName={"nuclei_inferral"}
+      jobName={APIJobType.INFER_NUCLEI}
       title="AI Nuclei Segmentation"
       suggestedDatasetSuffix="with_nuclei"
       jobApiCall={async ({ newDatasetName, selectedLayer: colorLayer }) =>
-        startNucleiInferralJob(
-          dataset.owningOrganization,
-          dataset.name,
-          colorLayer.name,
-          newDatasetName,
-        )
+        startNucleiInferralJob(dataset.id, colorLayer.name, newDatasetName)
       }
       description={
         <>
@@ -690,9 +911,9 @@ export function NucleiDetectionForm() {
           <p>
             <b>
               Note that this feature is still experimental. Nuclei detection currently only works
-              with EM data and a resolution of approximately 200{ThinSpace}nm per voxel. The
+              with EM data and a magnification of approximately 200{ThinSpace}nm per voxel. The
               segmentation process will automatically use the magnification that matches that
-              resolution best.
+              magnification best.
             </b>
           </p>
         </>
@@ -702,27 +923,56 @@ export function NucleiDetectionForm() {
 }
 export function NeuronSegmentationForm() {
   const dataset = useSelector((state: OxalisState) => state.dataset);
+  const { neuronInferralCostPerGVx } = features();
+  const hasSkeletonAnnotation = useSelector(
+    (state: OxalisState) => state.annotation.skeleton != null,
+  );
   const dispatch = useDispatch();
+  const [doSplitMergerEvaluation, setDoSplitMergerEvaluation] = React.useState(false);
   return (
     <StartJobForm
       handleClose={() => dispatch(setAIJobModalStateAction("invisible"))}
-      jobName={"neuron_inferral"}
+      jobName={APIJobType.INFER_NEURONS}
       buttonLabel="Start AI neuron segmentation"
       title="AI Neuron Segmentation"
       suggestedDatasetSuffix="with_reconstructed_neurons"
       isBoundingBoxConfigurable
-      jobApiCall={async ({ newDatasetName, selectedLayer: colorLayer, selectedBoundingBox }) => {
-        if (!selectedBoundingBox) {
+      jobCreditCostPerGVx={neuronInferralCostPerGVx}
+      jobApiCall={async (
+        { newDatasetName, selectedLayer: colorLayer, selectedBoundingBox, annotationId },
+        form: FormInstance<any>,
+      ) => {
+        const splitMergerEvaluationSettings = form.getFieldValue(
+          "splitMergerEvaluationSettings",
+        ) as SplitMergerEvaluationSettings;
+        if (
+          !selectedBoundingBox ||
+          (doSplitMergerEvaluation && splitMergerEvaluationSettings == null)
+        ) {
           return;
         }
 
         const bbox = computeArrayFromBoundingBox(selectedBoundingBox.boundingBox);
+        if (!doSplitMergerEvaluation) {
+          return startNeuronInferralJob(
+            dataset.id,
+            colorLayer.name,
+            bbox,
+            newDatasetName,
+            doSplitMergerEvaluation,
+          );
+        }
         return startNeuronInferralJob(
-          dataset.owningOrganization,
-          dataset.name,
+          dataset.id,
           colorLayer.name,
           bbox,
           newDatasetName,
+          doSplitMergerEvaluation,
+          annotationId,
+          splitMergerEvaluationSettings.useSparseTracing,
+          splitMergerEvaluationSettings.maxEdgeLength,
+          splitMergerEvaluationSettings.sparseTubeThresholdInNm,
+          splitMergerEvaluationSettings.minimumMergerPathLengthInNm,
         );
       }}
       description={
@@ -738,34 +988,38 @@ export function NeuronSegmentationForm() {
           </Space>
         </>
       }
+      jobSpecificInputFields={
+        hasSkeletonAnnotation && (
+          <CollapsibleSplitMergerEvaluationSettings
+            isActive={doSplitMergerEvaluation}
+            setActive={setDoSplitMergerEvaluation}
+          />
+        )
+      }
     />
   );
 }
 
 export function MitochondriaSegmentationForm() {
   const dataset = useSelector((state: OxalisState) => state.dataset);
+  const { mitochondriaInferralCostPerGVx } = features();
   const dispatch = useDispatch();
   return (
     <StartJobForm
       handleClose={() => dispatch(setAIJobModalStateAction("invisible"))}
-      jobName={"mitochondria_inferral"}
+      jobName={APIJobType.INFER_MITOCHONDRIA}
       buttonLabel="Start AI mitochondria segmentation"
       title="AI Mitochondria Segmentation"
       suggestedDatasetSuffix="with_mitochondria_detected"
       isBoundingBoxConfigurable
+      jobCreditCostPerGVx={mitochondriaInferralCostPerGVx}
       jobApiCall={async ({ newDatasetName, selectedLayer: colorLayer, selectedBoundingBox }) => {
         if (!selectedBoundingBox) {
           return;
         }
 
         const bbox = computeArrayFromBoundingBox(selectedBoundingBox.boundingBox);
-        return startMitochondriaInferralJob(
-          dataset.owningOrganization,
-          dataset.name,
-          colorLayer.name,
-          bbox,
-          newDatasetName,
-        );
+        return startMitochondriaInferralJob(dataset.id, colorLayer.name, bbox, newDatasetName);
       }}
       description={
         <>
@@ -786,7 +1040,7 @@ export function MitochondriaSegmentationForm() {
 
 function CustomAiModelInferenceForm() {
   const dataset = useSelector((state: OxalisState) => state.dataset);
-  const annotationId = useSelector((state: OxalisState) => state.tracing.annotationId);
+  const annotationId = useSelector((state: OxalisState) => state.annotation.annotationId);
   const isViewMode = useSelector(
     (state: OxalisState) => state.temporaryConfiguration.controlMode === ControlModeEnum.VIEW,
   );
@@ -807,7 +1061,7 @@ function CustomAiModelInferenceForm() {
   return (
     <StartJobForm
       handleClose={() => dispatch(setAIJobModalStateAction("invisible"))}
-      jobName="inference"
+      jobName={APIJobType.INFER_NEURONS}
       buttonLabel="Start inference with custom AI model"
       title="AI Inference"
       suggestedDatasetSuffix="with_custom_model"
@@ -824,11 +1078,12 @@ function CustomAiModelInferenceForm() {
         const boundingBox = computeArrayFromBoundingBox(selectedBoundingBox.boundingBox);
 
         const maybeAnnotationId = isViewMode ? {} : { annotationId };
-        return runInferenceJob({
+        return runNeuronInferenceWithAiModelJob({
           ...maybeAnnotationId,
           aiModelId: form.getFieldValue("aiModel"),
           workflowYaml: useCustomWorkflow ? form.getFieldValue("workflowYaml") : undefined,
-          datasetName: dataset.name,
+          datasetDirectoryName: dataset.directoryName,
+          organizationId: dataset.owningOrganization,
           colorLayerName: colorLayer.name,
           boundingBox,
           newDatasetName: newDatasetName,
@@ -862,24 +1117,20 @@ function CustomAiModelInferenceForm() {
 export function AlignSectionsForm() {
   const dataset = useSelector((state: OxalisState) => state.dataset);
   const dispatch = useDispatch();
+  const { alignmentCostPerGVx } = features();
   return (
     <StartJobForm
       handleClose={() => dispatch(setAIJobModalStateAction("invisible"))}
-      jobName={"align_sections"}
+      jobName={APIJobType.ALIGN_SECTIONS}
       buttonLabel="Start section alignment job"
       title="Section Alignment"
       suggestedDatasetSuffix="aligned"
       isBoundingBoxConfigurable={false}
       isSkeletonSelectable={true}
       jobApiCall={async ({ newDatasetName, selectedLayer: colorLayer, annotationId }) =>
-        startAlignSectionsJob(
-          dataset.owningOrganization,
-          dataset.name,
-          colorLayer.name,
-          newDatasetName,
-          annotationId,
-        )
+        startAlignSectionsJob(dataset.id, colorLayer.name, newDatasetName, annotationId)
       }
+      jobCreditCostPerGVx={alignmentCostPerGVx}
       description={
         <Space direction="vertical" size="middle">
           <Row>
@@ -908,7 +1159,8 @@ export function MaterializeVolumeAnnotationModal({
   handleClose,
 }: MaterializeVolumeAnnotationModalProps) {
   const dataset = useSelector((state: OxalisState) => state.dataset);
-  const tracing = useSelector((state: OxalisState) => state.tracing);
+  const tracing = useSelector((state: OxalisState) => state.annotation);
+  let includesEditableMapping = false;
   const activeSegmentationTracingLayer = useSelector(getActiveSegmentationTracingLayer);
   const fixedSelectedLayer = selectedVolumeLayer || activeSegmentationTracingLayer;
   const readableVolumeLayerName =
@@ -943,6 +1195,10 @@ export function MaterializeVolumeAnnotationModal({
         output dataset and the output segmentation layer.
       </p>
     );
+  } else if (fixedSelectedLayer && "tracingId" in fixedSelectedLayer) {
+    includesEditableMapping =
+      tracing.volumes.find((volume) => volume.tracingId === fixedSelectedLayer.tracingId)
+        ?.hasEditableMapping === true;
   }
   const jobImage =
     jobNameToImagePath[jobName] != null ? (
@@ -969,11 +1225,16 @@ export function MaterializeVolumeAnnotationModal({
       <StartJobForm
         handleClose={handleClose}
         title="Start Materializing this Volume Annotation"
-        jobName={"materialize_volume_annotation"}
+        jobName={APIJobType.MATERIALIZE_VOLUME_ANNOTATION}
         suggestedDatasetSuffix="with_merged_segmentation"
         chooseSegmentationLayer
+        isBoundingBoxConfigurable={includesEditableMapping}
         fixedSelectedLayer={fixedSelectedLayer}
-        jobApiCall={async ({ newDatasetName, selectedLayer: segmentationLayer }) => {
+        jobApiCall={async ({
+          newDatasetName,
+          selectedLayer: segmentationLayer,
+          selectedBoundingBox,
+        }) => {
           // There are 3 cases for the value assignments to volumeLayerName and baseSegmentationName for the job:
           // 1. There is a volume annotation with a fallback layer. volumeLayerName will reference the volume layer
           // and baseSegmentationName will reference the fallback layer. The job will merge those layers.
@@ -986,15 +1247,19 @@ export function MaterializeVolumeAnnotationModal({
               ? getReadableNameOfVolumeLayer(segmentationLayer, tracing)
               : null;
           const baseSegmentationName = getBaseSegmentationName(segmentationLayer);
+          const bbox = selectedBoundingBox?.boundingBox
+            ? computeArrayFromBoundingBox(selectedBoundingBox.boundingBox)
+            : undefined;
           return startMaterializingVolumeAnnotationJob(
-            dataset.owningOrganization,
-            dataset.name,
+            dataset.id,
             baseSegmentationName,
             volumeLayerName,
             newDatasetName,
             tracing.annotationId,
             tracing.annotationType,
             isMergerModeEnabled,
+            includesEditableMapping,
+            bbox,
           );
         }}
         description={

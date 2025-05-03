@@ -1,5 +1,7 @@
 package com.scalableminds.webknossos.datastore.datareaders
 
+import com.scalableminds.util.cache.AlfuCache
+import com.scalableminds.util.tools.{Fox, FoxImplicits}
 import net.liftweb.common.Box
 import net.liftweb.common.Box.tryo
 
@@ -7,6 +9,8 @@ import java.io.ByteArrayInputStream
 import javax.imageio.stream.MemoryCacheImageInputStream
 import scala.util.Using
 import ucar.ma2.{Array => MultiArray, DataType => MADataType}
+
+import scala.concurrent.ExecutionContext
 
 object ChunkTyper {
   def createFromHeader(header: DatasetHeader): ChunkTyper = header.resolvedDataType match {
@@ -19,13 +23,20 @@ object ChunkTyper {
   }
 }
 
-abstract class ChunkTyper {
+abstract class ChunkTyper extends FoxImplicits {
   val header: DatasetHeader
 
   def ma2DataType: MADataType
   def wrapAndType(bytes: Array[Byte], chunkShape: Array[Int]): Box[MultiArray]
 
-  def createFromFillValue(chunkShape: Array[Int]): Box[MultiArray] =
+  // If large areas of the array use the fill value, the same chunk shape will be requested often.
+  // This cache implements a flyweight pattern by returning the same instance of the fill-valued array.
+  private val fillValueChunkCache: AlfuCache[String, MultiArray] = AlfuCache(maxCapacity = 1)
+
+  def createFromFillValueCached(chunkShape: Array[Int])(implicit ec: ExecutionContext): Fox[MultiArray] =
+    fillValueChunkCache.getOrLoad(chunkShape.mkString(","), _ => createFromFillValue(chunkShape).toFox)
+
+  protected def createFromFillValue(chunkShape: Array[Int]): Box[MultiArray] =
     MultiArrayUtils.createFilledArray(ma2DataType, chunkShapeOrdered(chunkShape), header.fillValueNumber)
 
   // Chunk shape in header is in C-Order (XYZ), but data may be in F-Order (ZYX), so the chunk shape
@@ -127,7 +138,7 @@ class ShortcutChunkTyper(val header: DatasetHeader) extends ChunkTyper {
     MultiArray.factory(ma2DataType, flatShape, bytes)
   }
 
-  override def createFromFillValue(chunkShape: Array[Int]): Box[MultiArray] = {
+  override protected def createFromFillValue(chunkShape: Array[Int]): Box[MultiArray] = {
     val flatShape = Array(chunkShape.product * header.bytesPerElement)
     MultiArrayUtils.createFilledArray(ma2DataType, flatShape, header.fillValueNumber)
   }

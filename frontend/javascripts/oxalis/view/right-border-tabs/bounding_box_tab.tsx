@@ -1,32 +1,32 @@
-import { type MenuProps, Table, Tooltip, Typography } from "antd";
 import { PlusSquareOutlined } from "@ant-design/icons";
-import { useSelector, useDispatch } from "react-redux";
-import type React from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type MenuProps, Table, Tooltip, Typography } from "antd";
+import * as Utils from "libs/utils";
 import _ from "lodash";
-import UserBoundingBoxInput from "oxalis/view/components/setting_input_views";
 import {
-  type Vector3,
-  type Vector6,
   type BoundingBoxType,
   ControlModeEnum,
+  type Vector3,
+  type Vector6,
 } from "oxalis/constants";
+import { isAnnotationOwner } from "oxalis/model/accessors/annotation_accessor";
+import { getSomeTracing } from "oxalis/model/accessors/tracing_accessor";
 import {
-  changeUserBoundingBoxAction,
   addUserBoundingBoxAction,
+  changeUserBoundingBoxAction,
   deleteUserBoundingBoxAction,
 } from "oxalis/model/actions/annotation_actions";
-import { getSomeTracing } from "oxalis/model/accessors/tracing_accessor";
-import { isAnnotationOwner } from "oxalis/model/accessors/annotation_accessor";
 import { setPositionAction } from "oxalis/model/actions/flycam_actions";
-import * as Utils from "libs/utils";
-import type { OxalisState, UserBoundingBox } from "oxalis/store";
-import DownloadModalView from "../action-bar/download_modal_view";
-import { APIJobType } from "types/api_flow_types";
-import { ContextMenuContainer } from "./sidebar_context_menu";
-import { getContextMenuPositionFromEvent } from "../context_menu";
-import AutoSizer from "react-virtualized-auto-sizer";
 import { setActiveUserBoundingBoxId } from "oxalis/model/actions/ui_actions";
+import type { OxalisState, UserBoundingBox } from "oxalis/store";
+import UserBoundingBoxInput from "oxalis/view/components/setting_input_views";
+import type React from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import AutoSizer from "react-virtualized-auto-sizer";
+import { APIJobType } from "types/api_types";
+import DownloadModalView from "../action-bar/download_modal_view";
+import { getContextMenuPositionFromEvent } from "../context_menu";
+import { ContextMenuContainer } from "./sidebar_context_menu";
 
 const ADD_BBOX_BUTTON_HEIGHT = 32;
 const CONTEXT_MENU_CLASS = "bbox-list-context-menu-overlay";
@@ -35,15 +35,15 @@ export default function BoundingBoxTab() {
   const bboxTableRef: Parameters<typeof Table>[0]["ref"] = useRef(null);
   const [selectedBoundingBoxForExport, setSelectedBoundingBoxForExport] =
     useState<UserBoundingBox | null>(null);
-  const tracing = useSelector((state: OxalisState) => state.tracing);
-  const allowUpdate = tracing.restrictions.allowUpdate;
-  const isLockedByOwner = tracing.isLockedByOwner;
+  const annotation = useSelector((state: OxalisState) => state.annotation);
+  const allowUpdate = annotation.restrictions.allowUpdate;
+  const isLockedByOwner = annotation.isLockedByOwner;
   const isOwner = useSelector((state: OxalisState) => isAnnotationOwner(state));
   const dataset = useSelector((state: OxalisState) => state.dataset);
   const activeBoundingBoxId = useSelector(
     (state: OxalisState) => state.uiInformation.activeUserBoundingBoxId,
   );
-  const { userBoundingBoxes } = getSomeTracing(tracing);
+  const { userBoundingBoxes } = getSomeTracing(annotation);
   const [contextMenuPosition, setContextMenuPosition] = useState<[number, number] | null>(null);
   const [menu, setMenu] = useState<MenuProps | null>(null);
   const dispatch = useDispatch();
@@ -90,7 +90,7 @@ export default function BoundingBoxTab() {
   }
 
   function handleExportBoundingBox(bb: UserBoundingBox) {
-    _.partial(setSelectedBoundingBoxForExport, bb);
+    setSelectedBoundingBoxForExport(bb);
     hideContextMenu();
   }
 
@@ -147,7 +147,7 @@ export default function BoundingBoxTab() {
           isVisible={bb.isVisible}
           onBoundingChange={_.partial(handleBoundingBoxBoundingChange, bb.id)}
           onDelete={_.partial(deleteBoundingBox, bb.id)}
-          onExport={isExportEnabled ? () => handleExportBoundingBox(bb) : () => {}}
+          onExport={isExportEnabled ? () => handleExportBoundingBox(bb) : _.noop}
           onGoToBoundingBox={_.partial(handleGoToBoundingBox, bb.id)}
           onVisibilityChange={_.partial(setBoundingBoxVisibility, bb.id)}
           onNameChange={_.partial(setBoundingBoxName, bb.id)}

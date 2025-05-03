@@ -1,7 +1,7 @@
 package com.scalableminds.webknossos.datastore.models.annotation
 
-import com.scalableminds.util.tools.Fox.bool2Fox
 import com.scalableminds.util.tools.{Fox, FoxImplicits}
+import com.scalableminds.webknossos.datastore.Annotation.AnnotationLayerProto
 import com.scalableminds.webknossos.datastore.SkeletonTracing.SkeletonTracing
 import com.scalableminds.webknossos.datastore.VolumeTracing.VolumeTracing
 import com.scalableminds.webknossos.datastore.models.annotation.AnnotationLayerType.AnnotationLayerType
@@ -15,29 +15,16 @@ case class AnnotationLayer(
     typ: AnnotationLayerType,
     name: String,
     stats: JsObject,
-)
-
-object AnnotationLayerStatistics {
-
-  def zeroedForTyp(typ: AnnotationLayerType): JsObject = typ match {
-    case AnnotationLayerType.Skeleton =>
-      Json.obj(
-        "treeCount" -> 0,
-        "nodeCount" -> 0,
-        "edgeCount" -> 0,
-        "branchPointCount" -> 0
-      )
-    case AnnotationLayerType.Volume =>
-      Json.obj(
-        "segmentCount" -> 0
-      )
-  }
-
-  def unknown: JsObject = Json.obj()
+) {
+  def toProto: AnnotationLayerProto =
+    AnnotationLayerProto(tracingId, name, AnnotationLayerType.toProto(typ))
 }
 
 object AnnotationLayer extends FoxImplicits {
   implicit val jsonFormat: OFormat[AnnotationLayer] = Json.format[AnnotationLayer]
+
+  def fromProto(p: AnnotationLayerProto): AnnotationLayer =
+    AnnotationLayer(p.tracingId, AnnotationLayerType.fromProto(p.typ), p.name, AnnotationLayerStatistics.unknown)
 
   val defaultSkeletonLayerName: String = "Skeleton"
   val defaultVolumeLayerName: String = "Volume"
@@ -58,9 +45,28 @@ object AnnotationLayer extends FoxImplicits {
         AnnotationLayer(_, AnnotationLayerType.Volume, defaultVolumeLayerName, AnnotationLayerStatistics.unknown))
     ).flatten
     for {
-      _ <- bool2Fox(!assertNonEmpty || annotationLayers.nonEmpty) ?~> "annotation.needsEitherSkeletonOrVolume"
+      _ <- Fox.fromBool(!assertNonEmpty || annotationLayers.nonEmpty) ?~> "annotation.needsEitherSkeletonOrVolume"
     } yield annotationLayers
   }
+}
+
+object AnnotationLayerStatistics {
+
+  def zeroedForType(typ: AnnotationLayerType): JsObject = typ match {
+    case AnnotationLayerType.Skeleton =>
+      Json.obj(
+        "treeCount" -> 0,
+        "nodeCount" -> 0,
+        "edgeCount" -> 0,
+        "branchPointCount" -> 0
+      )
+    case AnnotationLayerType.Volume =>
+      Json.obj(
+        "segmentCount" -> 0
+      )
+  }
+
+  def unknown: JsObject = Json.obj()
 }
 
 case class FetchedAnnotationLayer(tracingId: String,
@@ -83,7 +89,7 @@ object FetchedAnnotationLayer {
       tracing: Either[SkeletonTracing, VolumeTracing],
       volumeDataOpt: Option[Array[Byte]] = None)(implicit ec: ExecutionContext): Fox[FetchedAnnotationLayer] =
     for {
-      _ <- bool2Fox(
+      _ <- Fox.fromBool(
         (annotationLayer.typ == AnnotationLayerType.Skeleton && tracing.isLeft) || annotationLayer.typ == AnnotationLayerType.Volume && tracing.isRight) ?~> "annotation.download.fetch.typeMismatch"
     } yield {
       FetchedAnnotationLayer(
@@ -103,14 +109,14 @@ object FetchedAnnotationLayer {
       volumeTracingOpt: Option[VolumeTracing],
       assertNonEmpty: Boolean = true)(implicit ec: ExecutionContext): Fox[List[FetchedAnnotationLayer]] =
     for {
-      _ <- bool2Fox(skeletonTracingIdOpt.isDefined == skeletonTracingOpt.isDefined) ?~> "annotation.mismatchingSkeletonIdsAndTracings"
-      _ <- bool2Fox(volumeTracingIdOpt.isDefined == volumeTracingOpt.isDefined) ?~> "annotation.mismatchingVolumeIdsAndTracings"
+      _ <- Fox.fromBool(skeletonTracingIdOpt.isDefined == skeletonTracingOpt.isDefined) ?~> "annotation.mismatchingSkeletonIdsAndTracings"
+      _ <- Fox.fromBool(volumeTracingIdOpt.isDefined == volumeTracingOpt.isDefined) ?~> "annotation.mismatchingVolumeIdsAndTracings"
       annotationLayers: List[FetchedAnnotationLayer] = List(
         skeletonTracingIdOpt.map(
           FetchedAnnotationLayer(_, AnnotationLayer.defaultSkeletonLayerName, Left(skeletonTracingOpt.get))),
         volumeTracingIdOpt.map(
           FetchedAnnotationLayer(_, AnnotationLayer.defaultVolumeLayerName, Right(volumeTracingOpt.get)))
       ).flatten
-      _ <- bool2Fox(!assertNonEmpty || annotationLayers.nonEmpty) ?~> "annotation.needsEitherSkeletonOrVolume"
+      _ <- Fox.fromBool(!assertNonEmpty || annotationLayers.nonEmpty) ?~> "annotation.needsEitherSkeletonOrVolume"
     } yield annotationLayers
 }

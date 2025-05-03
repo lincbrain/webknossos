@@ -2,7 +2,7 @@ package com.scalableminds.webknossos.tracingstore.tracings.volume
 
 import com.scalableminds.util.geometry.{Vec3Double, Vec3Int}
 import com.scalableminds.util.io.{NamedFunctionStream, NamedStream}
-import com.scalableminds.util.tools.ByteUtils
+import com.scalableminds.util.tools.{ByteUtils, Fox}
 import com.scalableminds.webknossos.datastore.dataformats.MagLocator
 import com.scalableminds.webknossos.datastore.dataformats.layers.Zarr3SegmentationLayer
 import com.scalableminds.webknossos.datastore.dataformats.zarr.Zarr3OutputHelper
@@ -23,12 +23,12 @@ import com.scalableminds.webknossos.datastore.models.datasource.{
 import com.scalableminds.webknossos.datastore.models.{AdditionalCoordinate, BucketPosition, VoxelSize}
 import play.api.libs.json.Json
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext
 
 // Creates data zip from volume tracings
 class Zarr3BucketStreamSink(val layer: VolumeTracingLayer, tracingHasFallbackLayer: Boolean)
     extends ProtoGeometryImplicits
-    with VolumeBucketReversionHelper
+    with ReversionHelper
     with Zarr3OutputHelper
     with ByteUtils {
 
@@ -44,7 +44,7 @@ class Zarr3BucketStreamSink(val layer: VolumeTracingLayer, tracingHasFallbackLay
     val header = Zarr3ArrayHeader.fromDataLayer(layer, mags.headOption.getOrElse(Vec3Int.ones))
     bucketStream.flatMap {
       case (bucket, data) =>
-        val skipBucket = if (tracingHasFallbackLayer) isAllZero(data) else isRevertedBucket(data)
+        val skipBucket = if (tracingHasFallbackLayer) isAllZero(data) else isRevertedElement(data)
         if (skipBucket) {
           // If the tracing has no fallback segmentation, all-zero buckets can be omitted entirely
           None
@@ -53,7 +53,7 @@ class Zarr3BucketStreamSink(val layer: VolumeTracingLayer, tracingHasFallbackLay
           Some(
             NamedFunctionStream(
               filePath,
-              os => Future.successful(os.write(compressor.compress(data)))
+              os => Fox.successful(os.write(compressor.compress(data)))
             )
           )
         }
@@ -68,7 +68,7 @@ class Zarr3BucketStreamSink(val layer: VolumeTracingLayer, tracingHasFallbackLay
   }
 
   private def createVolumeDataSource(voxelSize: Option[VoxelSize]): GenericDataSource[DataLayer] = {
-    val magLocators = layer.tracing.resolutions.map { mag =>
+    val magLocators = layer.tracing.mags.map { mag =>
       MagLocator(mag = vec3IntToProto(mag), axisOrder = Some(AxisOrder.cAdditionalxyz(rank)))
     }
     GenericDataSource(

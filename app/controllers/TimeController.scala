@@ -13,7 +13,7 @@ import net.liftweb.common.Box
 import play.api.libs.json.Json
 import play.api.mvc.{Action, AnyContent}
 import security.WkEnv
-import utils.ObjectId
+import com.scalableminds.util.objectid.ObjectId
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
@@ -27,13 +27,12 @@ class TimeController @Inject()(userService: UserService,
     with FoxImplicits {
 
   // Called by webknossos-libs client. Sums monthly. Includes exploratives
-  def userLoggedTime(userId: String): Action[AnyContent] =
+  def userLoggedTime(userId: ObjectId): Action[AnyContent] =
     sil.SecuredAction.async { implicit request =>
       for {
-        userIdValidated <- ObjectId.fromString(userId) ?~> "user.id.invalid"
-        user <- userDAO.findOne(userIdValidated) ?~> "user.notFound" ~> NOT_FOUND
+        user <- userDAO.findOne(userId) ?~> "user.notFound" ~> NOT_FOUND
         _ <- Fox.assertTrue(userService.isEditableBy(user, request.identity)) ?~> "notAllowed" ~> FORBIDDEN
-        timeSpansBox: Box[List[TimeSpan]] <- timeSpanDAO.findAllByUser(user._id).futureBox
+        timeSpansBox: Box[List[TimeSpan]] <- timeSpanDAO.findAllByUser(user._id).shiftBox
         timesGrouped: Map[Month, Duration] = timeSpanService.sumTimespansPerInterval(TimeSpan.groupByMonth,
                                                                                      timeSpansBox)
         timesGroupedSorted = ListMap(timesGrouped.toSeq.sortBy(_._1): _*)
@@ -47,7 +46,7 @@ class TimeController @Inject()(userService: UserService,
       }
     }
 
-  def timeSummedByAnnotationForUser(userId: String,
+  def timeSummedByAnnotationForUser(userId: ObjectId,
                                     start: Long,
                                     end: Long,
                                     annotationTypes: String,
@@ -55,13 +54,13 @@ class TimeController @Inject()(userService: UserService,
                                     projectIds: Option[String]): Action[AnyContent] = sil.SecuredAction.async {
     implicit request =>
       for {
-        userIdValidated <- ObjectId.fromString(userId)
         projectIdsValidated <- ObjectId.fromCommaSeparated(projectIds)
         annotationTypesValidated <- AnnotationType.fromCommaSeparated(annotationTypes) ?~> "invalidAnnotationType"
         annotationStatesValidated <- AnnotationState.fromCommaSeparated(annotationStates) ?~> "invalidAnnotationState"
-        user <- userService.findOneCached(userIdValidated) ?~> "user.notFound" ~> NOT_FOUND
+        user <- userService.findOneCached(userId) ?~> "user.notFound" ~> NOT_FOUND
         isTeamManagerOrAdmin <- userService.isTeamManagerOrAdminOf(request.identity, user)
-        _ <- bool2Fox(isTeamManagerOrAdmin || user._id == request.identity._id) ?~> "user.notAuthorised" ~> FORBIDDEN
+        _ <- Fox
+          .fromBool(isTeamManagerOrAdmin || user._id == request.identity._id) ?~> "user.notAuthorised" ~> FORBIDDEN
         timesByAnnotation <- timeSpanDAO.summedByAnnotationForUser(user._id,
                                                                    Instant(start),
                                                                    Instant(end),
@@ -71,7 +70,7 @@ class TimeController @Inject()(userService: UserService,
       } yield Ok(timesByAnnotation)
   }
 
-  def timeSpansOfUser(userId: String,
+  def timeSpansOfUser(userId: ObjectId,
                       start: Long,
                       end: Long,
                       annotationTypes: String,
@@ -79,13 +78,12 @@ class TimeController @Inject()(userService: UserService,
                       projectIds: Option[String]): Action[AnyContent] =
     sil.SecuredAction.async { implicit request =>
       for {
-        userIdValidated <- ObjectId.fromString(userId)
         projectIdsValidated <- ObjectId.fromCommaSeparated(projectIds)
         annotationTypesValidated <- AnnotationType.fromCommaSeparated(annotationTypes) ?~> "invalidAnnotationType"
         annotationStatesValidated <- AnnotationState.fromCommaSeparated(annotationStates) ?~> "invalidAnnotationState"
-        user <- userService.findOneCached(userIdValidated) ?~> "user.notFound" ~> NOT_FOUND
+        user <- userService.findOneCached(userId) ?~> "user.notFound" ~> NOT_FOUND
         isTeamManagerOrAdmin <- userService.isTeamManagerOrAdminOf(request.identity, user)
-        _ <- bool2Fox(isTeamManagerOrAdmin || user._id == request.identity._id) ?~> "user.notAuthorised" ~> FORBIDDEN
+        _ <- Fox.fromBool(isTeamManagerOrAdmin || user._id == request.identity._id) ?~> "user.notAuthorised" ~> FORBIDDEN
         timeSpansJs <- timeSpanDAO.findAllByUserWithTask(user._id,
                                                          Instant(start),
                                                          Instant(end),
@@ -106,8 +104,8 @@ class TimeController @Inject()(userService: UserService,
         teamIdsValidated <- ObjectId.fromCommaSeparated(teamIds) ?~> "invalidTeamId"
         annotationTypesValidated <- AnnotationType.fromCommaSeparated(annotationTypes) ?~> "invalidAnnotationType"
         annotationStatesValidated <- AnnotationState.fromCommaSeparated(annotationStates) ?~> "invalidAnnotationState"
-        _ <- bool2Fox(annotationTypesValidated.nonEmpty) ?~> "annotationTypesEmpty"
-        _ <- bool2Fox(annotationTypesValidated.forall(typ =>
+        _ <- Fox.fromBool(annotationTypesValidated.nonEmpty) ?~> "annotationTypesEmpty"
+        _ <- Fox.fromBool(annotationTypesValidated.forall(typ =>
           typ == AnnotationType.Explorational || typ == AnnotationType.Task)) ?~> "unsupportedAnnotationType"
         projectIdsValidated <- ObjectId.fromCommaSeparated(projectIds)
         usersByTeams <- if (teamIdsValidated.isEmpty) userDAO.findAll else userDAO.findAllByTeams(teamIdsValidated)

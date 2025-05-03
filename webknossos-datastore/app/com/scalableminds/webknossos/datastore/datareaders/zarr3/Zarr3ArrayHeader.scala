@@ -1,7 +1,8 @@
 package com.scalableminds.webknossos.datastore.datareaders.zarr3
 
 import com.scalableminds.util.geometry.Vec3Int
-import com.scalableminds.util.tools.{BoxImplicits, JsonHelper}
+import com.scalableminds.util.tools.BoxUtils.bool2Box
+import com.scalableminds.util.tools.JsonHelper
 import com.scalableminds.webknossos.datastore.datareaders.ArrayDataType.ArrayDataType
 import com.scalableminds.webknossos.datastore.datareaders.ArrayOrder.ArrayOrder
 import com.scalableminds.webknossos.datastore.datareaders.DimensionSeparator.DimensionSeparator
@@ -17,7 +18,7 @@ import com.scalableminds.webknossos.datastore.helpers.JsonImplicits
 import com.scalableminds.webknossos.datastore.models.datasource.{AdditionalAxis, DataLayer}
 import net.liftweb.common.Box.tryo
 import net.liftweb.common.{Box, Full}
-import play.api.libs.json.{Format, JsArray, JsResult, JsString, JsSuccess, JsValue, Json, OFormat}
+import play.api.libs.json.{Format, JsArray, JsObject, JsResult, JsString, JsSuccess, JsValue, Json, OFormat}
 
 import java.nio.ByteOrder
 
@@ -29,12 +30,11 @@ case class Zarr3ArrayHeader(
     chunk_grid: Either[ChunkGridSpecification, ExtensionChunkGridSpecification],
     chunk_key_encoding: ChunkKeyEncoding,
     fill_value: Either[String, Number], // Boolean not supported
-    attributes: Option[Map[String, String]],
+    attributes: Option[JsObject],
     codecs: Seq[CodecConfiguration],
     storage_transformers: Option[Seq[StorageTransformerSpecification]],
     dimension_names: Option[Array[String]]
-) extends DatasetHeader
-    with BoxImplicits {
+) extends DatasetHeader {
 
   override def datasetShape: Option[Array[Int]] = Some(shape)
 
@@ -173,7 +173,7 @@ object Zarr3ArrayHeader extends JsonImplicits {
         chunk_grid <- (json \ "chunk_grid").validate[ChunkGridSpecification]
         chunk_key_encoding <- (json \ "chunk_key_encoding").validate[ChunkKeyEncoding]
         fill_value <- (json \ "fill_value").validate[Either[String, Number]]
-        attributes = (json \ "attributes").validate[Map[String, String]].asOpt
+        attributes = (json \ "attributes").validate[JsObject].asOpt
         codecsJsValue <- (json \ "codecs").validate[JsValue]
         codecs = readCodecs(codecsJsValue)
         dimension_names <- (json \ "dimension_names").validate[Array[String]].orElse(JsSuccess(Array[String]()))
@@ -211,12 +211,19 @@ object Zarr3ArrayHeader extends JsonImplicits {
       val codecSpecs = rawCodecSpecs.map(c => {
         for {
           spec: CodecConfiguration <- c("name") match {
-            case JsString(BytesCodecConfiguration.name)       => c(configurationKey).validate[BytesCodecConfiguration]
-            case JsString(BytesCodecConfiguration.legacyName) => c(configurationKey).validate[BytesCodecConfiguration]
-            case JsString(TransposeCodecConfiguration.name)   => c(configurationKey).validate[TransposeCodecConfiguration]
-            case JsString(GzipCodecConfiguration.name)        => c(configurationKey).validate[GzipCodecConfiguration]
-            case JsString(BloscCodecConfiguration.name)       => c(configurationKey).validate[BloscCodecConfiguration]
-            case JsString(ZstdCodecConfiguration.name)        => c(configurationKey).validate[ZstdCodecConfiguration]
+            // BytesCodec may have no "configuration" key
+            case JsString(BytesCodecConfiguration.name) =>
+              (c \ configurationKey).toOption
+                .map(_.validate[BytesCodecConfiguration])
+                .getOrElse(JsSuccess(BytesCodecConfiguration(None)))
+            case JsString(BytesCodecConfiguration.legacyName) =>
+              (c \ configurationKey).toOption
+                .map(_.validate[BytesCodecConfiguration])
+                .getOrElse(JsSuccess(BytesCodecConfiguration(None)))
+            case JsString(TransposeCodecConfiguration.name) => c(configurationKey).validate[TransposeCodecConfiguration]
+            case JsString(GzipCodecConfiguration.name)      => c(configurationKey).validate[GzipCodecConfiguration]
+            case JsString(BloscCodecConfiguration.name)     => c(configurationKey).validate[BloscCodecConfiguration]
+            case JsString(ZstdCodecConfiguration.name)      => c(configurationKey).validate[ZstdCodecConfiguration]
             case JsString(Crc32CCodecConfiguration.name) =>
               JsSuccess(Crc32CCodecConfiguration) // Crc32 codec has no configuration
             case JsString(ShardingCodecConfiguration.name) => readShardingCodecConfiguration(c(configurationKey))
@@ -242,7 +249,7 @@ object Zarr3ArrayHeader extends JsonImplicits {
             ChunkGridConfiguration(Array(1, 1, 1))))), // Extension not supported for now
         "chunk_key_encoding" -> zarrArrayHeader.chunk_key_encoding,
         "fill_value" -> zarrArrayHeader.fill_value,
-        "attributes" -> Json.toJsFieldJsValueWrapper(zarrArrayHeader.attributes.getOrElse(Map.empty)),
+        "attributes" -> Json.toJsFieldJsValueWrapper(zarrArrayHeader.attributes.getOrElse(JsObject.empty)),
         "codecs" -> zarrArrayHeader.codecs.map { codec: CodecConfiguration =>
           val configurationJson = if (codec.includeConfiguration) Json.obj("configuration" -> codec) else Json.obj()
           Json.obj("name" -> codec.name) ++ configurationJson

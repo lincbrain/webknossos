@@ -1,3 +1,4 @@
+import type { TypedArray } from "oxalis/constants";
 import * as THREE from "three";
 
 /* The UpdatableTexture class exposes a way to partially update a texture.
@@ -32,10 +33,9 @@ class UpdatableTexture extends THREE.Texture {
     mapping?: THREE.Mapping,
     wrapS?: THREE.Wrapping,
     wrapT?: THREE.Wrapping,
-    magFilter?: THREE.TextureFilter,
-    minFilter?: THREE.TextureFilter,
+    magFilter?: THREE.MagnificationTextureFilter,
+    minFilter?: THREE.MinificationTextureFilter,
     anisotropy?: number,
-    encoding?: THREE.TextureEncoding,
   ) {
     const imageData = { width, height, data: new Uint32Array(0) };
 
@@ -50,7 +50,6 @@ class UpdatableTexture extends THREE.Texture {
       format,
       type,
       anisotropy,
-      encoding,
     );
 
     this.magFilter = magFilter !== undefined ? magFilter : THREE.LinearFilter;
@@ -64,24 +63,14 @@ class UpdatableTexture extends THREE.Texture {
   setRenderer(renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
     this.gl = this.renderer.getContext() as WebGL2RenderingContext;
-    this.utils = new THREE.WebGLUtils(
-      this.gl,
-      this.renderer.extensions,
-      this.renderer.capabilities,
-    );
+    this.utils = new THREE.WebGLUtils(this.gl, this.renderer.extensions);
   }
 
   isInitialized() {
-    return this.renderer.properties.get(this).__webglTexture != null;
+    return (this.renderer.properties.get(this) as any).__webglTexture != null;
   }
 
-  update(
-    src: Float32Array | Uint8Array | Uint32Array,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-  ) {
+  update(src: TypedArray, x: number, y: number, width: number, height: number) {
     if (originalTexSubImage2D == null) {
       // See explanation at declaration of originalTexSubImage2D.
       originalTexSubImage2D = this.gl.texSubImage2D.bind(this.gl);
@@ -99,7 +88,7 @@ class UpdatableTexture extends THREE.Texture {
       this.renderer.initTexture(this);
     }
     const activeTexture = this.gl.getParameter(this.gl.TEXTURE_BINDING_2D);
-    const textureProperties = this.renderer.properties.get(this);
+    const textureProperties = this.renderer.properties.get(this) as any;
     this.gl.bindTexture(this.gl.TEXTURE_2D, textureProperties.__webglTexture);
 
     originalTexSubImage2D(
@@ -116,4 +105,9 @@ class UpdatableTexture extends THREE.Texture {
     this.gl.bindTexture(this.gl.TEXTURE_2D, activeTexture);
   }
 }
+
+export function notifyAboutDisposedRenderer() {
+  originalTexSubImage2D = null;
+}
+
 export default UpdatableTexture;

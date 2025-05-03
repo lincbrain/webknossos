@@ -1,6 +1,7 @@
 package models.dataset
 
 import com.scalableminds.util.accesscontext.{DBAccessContext, GlobalAccessContext}
+import com.scalableminds.util.objectid.ObjectId
 import com.scalableminds.util.tools.{Fox, FoxImplicits}
 import com.scalableminds.webknossos.schema.Tables._
 import models.job.JobService
@@ -12,7 +13,7 @@ import play.api.mvc.{Result, Results}
 import slick.jdbc.PostgresProfile.api._
 import slick.lifted.Rep
 import utils.sql.{SQLDAO, SqlClient, SqlToken}
-import utils.{ObjectId, WkConf}
+import utils.WkConf
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -70,19 +71,19 @@ class DataStoreService @Inject()(dataStoreDAO: DataStoreDAO, jobService: JobServ
       Json.obj(
         "name" -> dataStore.name,
         "url" -> dataStore.publicUrl,
-        "isScratch" -> dataStore.isScratch,
         "allowsUpload" -> dataStore.allowsUpload,
-        "jobsSupportedByAvailableWorkers" -> Json.toJson(jobsSupportedByAvailableWorkers),
+        "jobsSupportedByAvailableWorkers" -> Json.toJson(
+          if (conf.Features.jobsEnabled) jobsSupportedByAvailableWorkers else List.empty),
         "jobsEnabled" -> jobsEnabled
       )
 
   def validateAccess(name: String, key: String)(block: DataStore => Future[Result])(
       implicit m: MessagesProvider): Fox[Result] =
-    (for {
+    Fox.fromFuture((for {
       dataStore <- dataStoreDAO.findOneByName(name)(GlobalAccessContext)
-      _ <- bool2Fox(key == dataStore.key)
-      result <- block(dataStore)
-    } yield result).getOrElse(Forbidden(Json.obj("granted" -> false, "msg" -> Messages("dataStore.notFound"))))
+      _ <- Fox.fromBool(key == dataStore.key)
+      result <- Fox.fromFuture(block(dataStore))
+    } yield result).getOrElse(Forbidden(Json.obj("granted" -> false, "msg" -> Messages("dataStore.notFound")))))
 }
 
 class DataStoreDAO @Inject()(sqlClient: SqlClient)(implicit ec: ExecutionContext)

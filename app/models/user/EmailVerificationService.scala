@@ -2,12 +2,13 @@ package models.user
 
 import org.apache.pekko.actor.ActorSystem
 import com.scalableminds.util.accesscontext.DBAccessContext
+import com.scalableminds.util.objectid.ObjectId
 import com.scalableminds.util.time.Instant
 import com.scalableminds.util.tools.Fox
 import com.typesafe.scalalogging.LazyLogging
 import mail.{DefaultMails, Send}
 import security.RandomIDGenerator
-import utils.{ObjectId, WkConf}
+import utils.WkConf
 
 import javax.inject.Inject
 import scala.concurrent.ExecutionContext
@@ -55,9 +56,9 @@ class EmailVerificationService @Inject()(conf: WkConf,
     for {
       evk <- emailVerificationKeyDAO.findOneByKey(key) ?~> "user.email.verification.keyInvalid"
       multiUser <- multiUserDAO.findOne(evk._multiUser) ?~> "user.notFound"
-      _ <- Fox.bool2Fox(!evk.isUsed) ?~> "user.email.verification.keyUsed"
-      _ <- Fox.bool2Fox(evk.validUntil.forall(!_.isPast)) ?~> "user.email.verification.linkExpired"
-      _ <- Fox.bool2Fox(evk.email == multiUser.email) ?~> "user.email.verification.emailDoesNotMatch"
+      _ <- Fox.fromBool(!evk.isUsed) ?~> "user.email.verification.keyUsed"
+      _ <- Fox.fromBool(evk.validUntil.forall(!_.isPast)) ?~> "user.email.verification.linkExpired"
+      _ <- Fox.fromBool(evk.email == multiUser.email) ?~> "user.email.verification.emailDoesNotMatch"
       _ = multiUserDAO.updateEmailVerification(evk._multiUser, verified = true)
       _ <- emailVerificationKeyDAO.markAsUsed(evk._id)
     } yield ()
@@ -69,7 +70,7 @@ class EmailVerificationService @Inject()(conf: WkConf,
     for {
       emailVerificationOk <- userHasVerifiedEmail(user)
       _ <- Fox.runIf(!emailVerificationOk)(sendEmailVerification(user))
-      _ <- Fox.bool2Fox(emailVerificationOk) ?~> "user.email.notVerified"
+      _ <- Fox.fromBool(emailVerificationOk) ?~> "user.email.notVerified"
     } yield ()
 
   private def userHasVerifiedEmail(user: User)(

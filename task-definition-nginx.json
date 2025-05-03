@@ -1,0 +1,186 @@
+{
+  "family": "webknossos-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "executionRoleArn": "arn:aws:iam::151312473579:role/WebKnossosEcsExecutionRole",
+  "taskRoleArn": "arn:aws:iam::151312473579:role/WebKnossosTaskRole",
+  "cpu": "8192",
+  "memory": "61440",
+  "containerDefinitions": [
+    {
+      "name": "redis",
+      "image": "redis:7",
+      "cpu": 512,
+      "memory": 1024,
+      "essential": true,
+      "command": [
+        "redis-server"
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/webknossos-cluster",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "redis"
+        }
+      },
+      "portMappings": [
+        {
+          "containerPort": 6379,
+          "protocol": "tcp"
+        }
+      ]
+    },
+    {
+      "name": "nginx-proxy",
+      "image": "nginx:latest",
+      "cpu": 512,
+      "memory": 1024,
+      "essential": false,
+      "portMappings": [
+        {
+          "containerPort": 80,
+          "protocol": "tcp"
+        },
+        {
+          "containerPort": 443,
+          "protocol": "tcp"
+        }
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "nginx_conf",
+          "containerPath": "/etc/nginx",
+          "readOnly": true
+        },
+        {
+          "sourceVolume": "certs",
+          "containerPath": "/etc/letsencrypt"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/webknossos-cluster",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "nginx"
+        }
+      }
+    },
+    {
+      "name": "postgres",
+      "image": "postgres:15-bullseye",
+      "cpu": 1024,
+      "memory": 2048,
+      "essential": true,
+      "environment": [
+        { "name": "POSTGRES_DB", "value": "webknossos" },
+        { "name": "POSTGRES_USER", "value": "postgres" },
+        { "name": "POSTGRES_PASSWORD", "value": "postgres" }
+      ],
+      "command": ["postgres", "-c", "log_statement=all"],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/webknossos-cluster",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "postgres"
+        }
+      },
+      "healthCheck": {
+          "command": [
+              "CMD-SHELL",
+              "pg_isready -U postgres -d webknossos || exit 1"
+          ],
+          "interval": 30,
+          "timeout": 5,
+          "retries": 3,
+          "startPeriod": 60
+      },
+      "portMappings": [
+        {
+          "containerPort": 5432,
+          "protocol": "tcp"
+        }
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "binaryData",
+          "containerPath": "/binaryData"
+        },
+        {
+          "sourceVolume": "postgres-data",
+          "containerPath": "/postgres-data/var/lib/postgresql/data"
+        }
+      ]
+    },
+    {
+      "name": "fossildb",
+      "image": "docker.io/scalableminds/fossildb:master__484",
+      "cpu": 2048,
+      "memory": 4096,
+      "essential": true,
+      "command": [
+        "fossildb",
+        "-c",
+        "skeletons,skeletonUpdates,volumes,volumeData,volumeUpdates,volumeSegmentIndex,editableMappings,editableMappingUpdates,editableMappingsInfo,editableMappingsAgglomerateToGraph,editableMappingsSegmentToAgglomerate"
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/webknossos-cluster",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "fossildb"
+        }
+      },
+      "mountPoints": [
+        {
+          "sourceVolume": "fossildb-data",
+          "containerPath": "/fossildb/data"
+        }
+      ]
+    }
+  ],
+  "volumes": [
+    {
+      "name": "binaryData",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-0dc01efe6a77e4cd8",
+        "rootDirectory": "/binaryData",
+        "transitEncryption": "ENABLED"
+      }
+    },
+    {
+      "name": "postgres-data",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-0b8c991a5003f176d",
+        "rootDirectory": "/",
+        "transitEncryption": "ENABLED"
+      }
+    },
+    {
+      "name": "fossildb-data",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-0a0740f35d48c6a7d",
+        "rootDirectory": "/",
+        "transitEncryption": "ENABLED"
+      }
+    },
+    {
+      "name": "nginx_conf",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-0d32bb8e53abb0079",
+        "rootDirectory": "/nginx_conf",
+        "transitEncryption": "ENABLED"
+      }
+    },
+    {
+      "name": "certs",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-0d2cc855bb3edd4f4",
+        "rootDirectory": "/certs",
+        "transitEncryption": "ENABLED"
+      }
+    }
+  ]
+}

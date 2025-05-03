@@ -10,7 +10,7 @@ import play.api.libs.json.Reads._
 import play.api.libs.json._
 import play.api.mvc.{Action, AnyContent}
 import security.WkEnv
-import utils.ObjectId
+import com.scalableminds.util.objectid.ObjectId
 
 import scala.concurrent.ExecutionContext
 
@@ -31,8 +31,8 @@ class ScriptController @Inject()(scriptDAO: ScriptDAO,
     withJsonBodyUsing(scriptPublicReads) { script =>
       for {
         isTeamManagerOrAdmin <- userService.isTeamManagerOrAdminOfOrg(request.identity, request.identity._organization)
-        _ <- bool2Fox(isTeamManagerOrAdmin) ?~> "notAllowed" ~> FORBIDDEN
-        _ <- bool2Fox(script._owner == request.identity._id) ?~> "notAllowed" ~> FORBIDDEN
+        _ <- Fox.fromBool(isTeamManagerOrAdmin) ?~> "notAllowed" ~> FORBIDDEN
+        _ <- Fox.fromBool(script._owner == request.identity._id) ?~> "notAllowed" ~> FORBIDDEN
         _ <- scriptService.assertValidScriptName(script.name)
         _ <- scriptDAO.insertOne(script)
         js <- scriptService.publicWrites(script) ?~> "script.write.failed"
@@ -40,10 +40,9 @@ class ScriptController @Inject()(scriptDAO: ScriptDAO,
     }
   }
 
-  def get(scriptId: String): Action[AnyContent] = sil.SecuredAction.async { implicit request =>
+  def get(scriptId: ObjectId): Action[AnyContent] = sil.SecuredAction.async { implicit request =>
     for {
-      scriptIdValidated <- ObjectId.fromString(scriptId)
-      script <- scriptDAO.findOne(scriptIdValidated) ?~> "script.notFound" ~> NOT_FOUND
+      script <- scriptDAO.findOne(scriptId) ?~> "script.notFound" ~> NOT_FOUND
       js <- scriptService.publicWrites(script) ?~> "script.write.failed"
     } yield {
       Ok(js)
@@ -59,12 +58,11 @@ class ScriptController @Inject()(scriptDAO: ScriptDAO,
     }
   }
 
-  def update(scriptId: String): Action[JsValue] = sil.SecuredAction.async(parse.json) { implicit request =>
+  def update(scriptId: ObjectId): Action[JsValue] = sil.SecuredAction.async(parse.json) { implicit request =>
     withJsonBodyUsing(scriptPublicReads) { scriptFromForm =>
       for {
-        scriptIdValidated <- ObjectId.fromString(scriptId)
-        oldScript <- scriptDAO.findOne(scriptIdValidated) ?~> "script.notFound" ~> NOT_FOUND
-        _ <- bool2Fox(oldScript._owner == request.identity._id) ?~> "script.notOwner" ~> FORBIDDEN
+        oldScript <- scriptDAO.findOne(scriptId) ?~> "script.notFound" ~> NOT_FOUND
+        _ <- Fox.fromBool(oldScript._owner == request.identity._id) ?~> "script.notOwner" ~> FORBIDDEN
         _ <- scriptService.assertValidScriptName(scriptFromForm.name)
         updatedScript = scriptFromForm.copy(_id = oldScript._id)
         _ <- scriptDAO.updateOne(updatedScript)
@@ -75,13 +73,12 @@ class ScriptController @Inject()(scriptDAO: ScriptDAO,
     }
   }
 
-  def delete(scriptId: String): Action[AnyContent] = sil.SecuredAction.async { implicit request =>
+  def delete(scriptId: ObjectId): Action[AnyContent] = sil.SecuredAction.async { implicit request =>
     for {
-      scriptIdValidated <- ObjectId.fromString(scriptId)
-      oldScript <- scriptDAO.findOne(scriptIdValidated) ?~> "script.notFound" ~> NOT_FOUND
-      _ <- bool2Fox(oldScript._owner == request.identity._id) ?~> "script.notOwner" ~> FORBIDDEN
-      _ <- scriptDAO.deleteOne(scriptIdValidated) ?~> "script.removalFailed"
-      _ <- taskDAO.removeScriptFromAllTasks(scriptIdValidated) ?~> "script.removalFailed"
+      oldScript <- scriptDAO.findOne(scriptId) ?~> "script.notFound" ~> NOT_FOUND
+      _ <- Fox.fromBool(oldScript._owner == request.identity._id) ?~> "script.notOwner" ~> FORBIDDEN
+      _ <- scriptDAO.deleteOne(scriptId) ?~> "script.removalFailed"
+      _ <- taskDAO.removeScriptFromAllTasks(scriptId) ?~> "script.removalFailed"
     } yield {
       Ok
     }

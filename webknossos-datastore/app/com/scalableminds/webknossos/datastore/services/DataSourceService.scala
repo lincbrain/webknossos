@@ -5,20 +5,23 @@ import com.google.inject.Inject
 import com.google.inject.name.Named
 import com.scalableminds.util.io.PathUtils
 import com.scalableminds.util.io.PathUtils.ensureDirectoryBox
+import com.scalableminds.util.mvc.Formatter
 import com.scalableminds.util.time.Instant
 import com.scalableminds.util.tools.{Fox, FoxImplicits, JsonHelper}
 import com.scalableminds.webknossos.datastore.DataStoreConfig
-import com.scalableminds.webknossos.datastore.dataformats.MappingProvider
-import com.scalableminds.webknossos.datastore.helpers.IntervalScheduler
+import com.scalableminds.webknossos.datastore.dataformats.{MagLocator, MappingProvider}
+import com.scalableminds.webknossos.datastore.helpers.{DatasetDeleter, IntervalScheduler}
 import com.scalableminds.webknossos.datastore.models.datasource._
 import com.scalableminds.webknossos.datastore.models.datasource.inbox.{InboxDataSource, UnusableDataSource}
-import com.scalableminds.webknossos.datastore.storage.RemoteSourceDescriptorService
+import com.scalableminds.webknossos.datastore.storage.{DataVaultService, RemoteSourceDescriptorService}
 import com.typesafe.scalalogging.LazyLogging
+import net.liftweb.common.Box.tryo
 import net.liftweb.common._
 import play.api.inject.ApplicationLifecycle
 import play.api.libs.json.Json
 
 import java.io.{File, FileWriter}
+import java.net.URI
 import java.nio.file.{Files, Path, Paths}
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
@@ -28,33 +31,46 @@ class DataSourceService @Inject()(
     config: DataStoreConfig,
     dataSourceRepository: DataSourceRepository,
     remoteSourceDescriptorService: RemoteSourceDescriptorService,
+    val remoteWebknossosClient: DSRemoteWebknossosClient,
     val lifecycle: ApplicationLifecycle,
-    @Named("webknossos-datastore") val system: ActorSystem
+    @Named("webknossos-datastore") val actorSystem: ActorSystem
 )(implicit val ec: ExecutionContext)
     extends IntervalScheduler
+    with DatasetDeleter
     with LazyLogging
-    with FoxImplicits {
+    with FoxImplicits
+    with Formatter {
 
-  override protected def enabled: Boolean = config.Datastore.WatchFileSystem.enabled
+  override protected def tickerEnabled: Boolean = config.Datastore.WatchFileSystem.enabled
   override protected def tickerInterval: FiniteDuration = config.Datastore.WatchFileSystem.interval
 
   override protected def tickerInitialDelay: FiniteDuration = config.Datastore.WatchFileSystem.initialDelay
 
-  val dataBaseDir: Path = Paths.get(config.Datastore.baseFolder)
+  val dataBaseDir: Path = Paths.get(config.Datastore.baseDirectory)
 
   private val propertiesFileName = Paths.get(GenericDataSource.FILENAME_DATASOURCE_PROPERTIES_JSON)
   private val logFileName = Paths.get("datasource-properties-backups.log")
 
   private var inboxCheckVerboseCounter = 0
 
-  def tick(): Unit = {
-    checkInbox(verbose = inboxCheckVerboseCounter == 0)
-    inboxCheckVerboseCounter += 1
-    if (inboxCheckVerboseCounter >= 10) inboxCheckVerboseCounter = 0
-  }
+  def tick(): Fox[Unit] =
+    for {
+      _ <- checkInbox(verbose = inboxCheckVerboseCounter == 0)
+      _ = inboxCheckVerboseCounter += 1
+      _ = if (inboxCheckVerboseCounter >= 10) inboxCheckVerboseCounter = 0
+    } yield ()
 
-  def assertDataDirWritable(organizationId: String): Fox[Unit] =
-    Fox.bool2Fox(Files.isWritable(dataBaseDir.resolve(organizationId))) ?~> "Datastore cannot write to its data directory."
+  def assertDataDirWritable(organizationId: String): Fox[Unit] = {
+    val orgaPath = dataBaseDir.resolve(organizationId)
+    if (orgaPath.toFile.exists()) {
+      Fox.fromBool(Files.isWritable(dataBaseDir.resolve(organizationId))) ?~> "Datastore cannot write to organization data directory."
+    } else {
+      tryo {
+        Files.createDirectory(orgaPath)
+      }.map(_ => ()).toFox ?~> "Could not create organization directory on datastore server"
+    }
+
+  }
 
   def checkInbox(verbose: Boolean): Fox[Unit] = {
     if (verbose) logger.info(s"Scanning inbox ($dataBaseDir)...")
@@ -67,6 +83,7 @@ class DataSourceService @Inject()(
             foundInboxSources = organizationDirs.flatMap(teamAwareInboxSources)
             _ = logFoundDatasources(foundInboxSources, verbose)
             _ <- dataSourceRepository.updateDataSources(foundInboxSources)
+            _ <- reportRealPaths(foundInboxSources)
           } yield ()
         case e =>
           val errorMsg = s"Failed to scan inbox. Error during list directories on '$dataBaseDir': $e"
@@ -76,18 +93,94 @@ class DataSourceService @Inject()(
     } yield ()
   }
 
+  private def reportRealPaths(dataSources: List[InboxDataSource]) =
+    for {
+      _ <- Fox.successful(())
+      magPathBoxes = dataSources.map(ds => (ds, determineMagRealPathsForDataSource(ds)))
+      pathInfos = magPathBoxes.map {
+        case (ds, Full(magPaths)) => DataSourcePathInfo(ds.id, magPaths)
+        case (ds, failure: Failure) =>
+          logger.error(s"Failed to determine real paths of mags of ${ds.id}: ${formatFailureChain(failure)}")
+          DataSourcePathInfo(ds.id, List())
+        case (ds, Empty) =>
+          logger.error(s"Failed to determine real paths for mags of ${ds.id}")
+          DataSourcePathInfo(ds.id, List())
+      }
+      _ <- remoteWebknossosClient.reportRealPaths(pathInfos)
+    } yield ()
+
+  private def determineMagRealPathsForDataSource(dataSource: InboxDataSource) = tryo {
+    val organizationPath = dataBaseDir.resolve(dataSource.id.organizationId)
+    val datasetPath = organizationPath.resolve(dataSource.id.directoryName)
+    dataSource.toUsable match {
+      case Some(usableDataSource) =>
+        usableDataSource.dataLayers.flatMap { dataLayer =>
+          val rawLayerPath = datasetPath.resolve(dataLayer.name)
+          val absoluteLayerPath = if (Files.isSymbolicLink(rawLayerPath)) {
+            resolveRelativePath(datasetPath, Files.readSymbolicLink(rawLayerPath))
+          } else {
+            rawLayerPath.toAbsolutePath
+          }
+          dataLayer.mags.map { mag =>
+            getMagPathInfo(datasetPath, absoluteLayerPath, rawLayerPath, dataLayer, mag)
+          }
+        }
+      case None => List()
+    }
+  }
+
+  private def getMagPathInfo(datasetPath: Path,
+                             absoluteLayerPath: Path,
+                             rawLayerPath: Path,
+                             dataLayer: DataLayer,
+                             mag: MagLocator) = {
+    val (magURI, isRemote) = getMagURI(datasetPath, absoluteLayerPath, mag)
+    if (isRemote) {
+      MagPathInfo(dataLayer.name, mag.mag, magURI.toString, magURI.toString, hasLocalData = false)
+    } else {
+      val magPath = Paths.get(magURI)
+      val realPath = magPath.toRealPath()
+      // Does this dataset have local data, i.e. the data that is referenced by the mag path is within the dataset directory
+      val isLocal = realPath.startsWith(datasetPath.toAbsolutePath)
+      val unresolvedPath =
+        rawLayerPath.toAbsolutePath.resolve(absoluteLayerPath.relativize(magPath)).normalize()
+      MagPathInfo(dataLayer.name,
+                  mag.mag,
+                  unresolvedPath.toUri.toString,
+                  realPath.toUri.toString,
+                  hasLocalData = isLocal)
+    }
+  }
+
+  private def getMagURI(datasetPath: Path, layerPath: Path, mag: MagLocator): (URI, Boolean) = {
+    val uri = remoteSourceDescriptorService.resolveMagPath(
+      datasetPath,
+      layerPath,
+      layerPath.getFileName.toString,
+      mag
+    )
+    (uri, DataVaultService.isRemoteScheme(uri.getScheme))
+  }
+
+  private def resolveRelativePath(basePath: Path, relativePath: Path): Path =
+    if (relativePath.isAbsolute) {
+      relativePath
+    } else {
+      basePath.resolve(relativePath).normalize().toAbsolutePath
+    }
+
   private def logFoundDatasources(foundInboxSources: Seq[InboxDataSource], verbose: Boolean): Unit = {
     val shortForm =
       s"Finished scanning inbox ($dataBaseDir): ${foundInboxSources.count(_.isUsable)} active, ${foundInboxSources
         .count(!_.isUsable)} inactive"
     val msg = if (verbose) {
-      val byTeam: Map[String, Seq[InboxDataSource]] = foundInboxSources.groupBy(_.id.team)
+      val byTeam: Map[String, Seq[InboxDataSource]] = foundInboxSources.groupBy(_.id.organizationId)
       shortForm + ". " + byTeam.keys.map { team =>
         val byUsable: Map[Boolean, Seq[InboxDataSource]] = byTeam(team).groupBy(_.isUsable)
         team + ": [" + byUsable.keys.map { usable =>
           val label = if (usable) "active: [" else "inactive: ["
           label + byUsable(usable).map { ds =>
-            s"${ds.id.name}"
+            s"${ds.id.directoryName}"
           }.mkString(" ") + "]"
         }.mkString(", ") + "]"
       }.mkString(", ")
@@ -119,7 +212,7 @@ class DataSourceService @Inject()(
       .exploreMappings(dataBaseDir.resolve(organizationId).resolve(datasetName).resolve(dataLayerName))
       .getOrElse(Set())
 
-  private def validateDataSource(dataSource: DataSource): Box[Unit] = {
+  private def validateDataSource(dataSource: DataSource, organizationDir: Path): Box[Unit] = {
     def Check(expression: Boolean, msg: String): Option[String] = if (!expression) Some(msg) else None
 
     // Check that when mags are sorted by max dimension, all dimensions are sorted.
@@ -128,6 +221,16 @@ class DataSourceService @Inject()(
     val magsXIsSorted = magsSorted.map(_.map(_.x)) == magsSorted.map(_.map(_.x).sorted)
     val magsYIsSorted = magsSorted.map(_.map(_.y)) == magsSorted.map(_.map(_.y).sorted)
     val magsZIsSorted = magsSorted.map(_.map(_.z)) == magsSorted.map(_.map(_.z).sorted)
+
+    def pathOk(pathStr: String): Boolean = {
+      val uri = new URI(pathStr)
+      if (DataVaultService.isRemoteScheme(uri.getScheme)) true
+      else {
+        val path = Path.of(new URI(pathStr).getPath).normalize().toAbsolutePath
+        val allowedParent = organizationDir.toAbsolutePath
+        if (path.startsWith(allowedParent)) true else false
+      }
+    }
 
     val errors = List(
       Check(dataSource.scale.factor.isStrictlyPositive, "DataSource voxel size (scale) is invalid"),
@@ -149,6 +252,10 @@ class DataSourceService @Inject()(
       Check(
         dataSource.dataLayers.map(_.name).distinct.length == dataSource.dataLayers.length,
         "Layer names must be unique. At least two layers have the same name."
+      ),
+      Check(
+        dataSource.dataLayers.flatMap(_.mags).flatMap(_.path).forall(pathOk),
+        "Mags with explicit paths must stay within the organization directory."
       )
     ).flatten
 
@@ -159,17 +266,19 @@ class DataSourceService @Inject()(
     }
   }
 
-  def updateDataSource(dataSource: DataSource, expectExisting: Boolean): Fox[Unit] =
+  def updateDataSource(dataSource: DataSource, expectExisting: Boolean): Fox[Unit] = {
+    val organizationDir = dataBaseDir.resolve(dataSource.id.organizationId)
+    val dataSourcePath = organizationDir.resolve(dataSource.id.directoryName)
     for {
-      _ <- validateDataSource(dataSource).toFox
-      dataSourcePath = dataBaseDir.resolve(dataSource.id.team).resolve(dataSource.id.name)
+      _ <- validateDataSource(dataSource, organizationDir).toFox
       propertiesFile = dataSourcePath.resolve(propertiesFileName)
-      _ <- Fox.runIf(!expectExisting)(ensureDirectoryBox(dataSourcePath))
-      _ <- Fox.runIf(!expectExisting)(bool2Fox(!Files.exists(propertiesFile))) ?~> "dataSource.alreadyPresent"
-      _ <- Fox.runIf(expectExisting)(backupPreviousProperties(dataSourcePath)) ?~> "Could not update datasource-properties.json"
-      _ <- JsonHelper.jsonToFile(propertiesFile, dataSource) ?~> "Could not update datasource-properties.json"
+      _ <- Fox.runIf(!expectExisting)(ensureDirectoryBox(dataSourcePath).toFox)
+      _ <- Fox.runIf(!expectExisting)(Fox.fromBool(!Files.exists(propertiesFile))) ?~> "dataSource.alreadyPresent"
+      _ <- Fox.runIf(expectExisting)(backupPreviousProperties(dataSourcePath).toFox) ?~> "Could not update datasource-properties.json"
+      _ <- JsonHelper.writeToFile(propertiesFile, dataSource).toFox ?~> "Could not update datasource-properties.json"
       _ <- dataSourceRepository.updateDataSource(dataSource)
     } yield ()
+  }
 
   private def backupPreviousProperties(dataSourcePath: Path): Box[Unit] = {
     val propertiesFile = dataSourcePath.resolve(propertiesFileName)
@@ -213,7 +322,7 @@ class DataSourceService @Inject()(
     val propertiesFile = path.resolve(propertiesFileName)
 
     if (new File(propertiesFile.toString).exists()) {
-      JsonHelper.validatedJsonFromFile[DataSource](propertiesFile, path) match {
+      JsonHelper.parseFromFileAs[DataSource](propertiesFile, path) match {
         case Full(dataSource) =>
           if (dataSource.dataLayers.nonEmpty) dataSource.copy(id)
           else
@@ -221,14 +330,14 @@ class DataSourceService @Inject()(
         case e =>
           UnusableDataSource(id,
                              s"Error: Invalid json format in $propertiesFile: $e",
-                             existingDataSourceProperties = JsonHelper.jsonFromFile(propertiesFile, path).toOption)
+                             existingDataSourceProperties = JsonHelper.parseFromFile(propertiesFile, path).toOption)
       }
     } else {
       UnusableDataSource(id, "Not imported yet.")
     }
   }
 
-  def invalidateVaultCache(dataSource: InboxDataSource, dataLayerName: Option[String]): Fox[Int] =
+  def invalidateVaultCache(dataSource: InboxDataSource, dataLayerName: Option[String]): Option[Int] =
     for {
       genericDataSource <- dataSource.toUsable
       dataLayers = dataLayerName match {
@@ -242,5 +351,4 @@ class DataSourceService @Inject()(
           remoteSourceDescriptorService.removeVaultFromCache(dataBaseDir, dataSource.id, dataLayer.name, mag))
       } yield dataLayer.mags.length
     } yield removedEntriesList.sum
-
 }

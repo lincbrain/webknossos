@@ -18,7 +18,7 @@ import javax.inject.Inject
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
-class UsedStorageService @Inject()(val system: ActorSystem,
+class UsedStorageService @Inject()(val actorSystem: ActorSystem,
                                    val lifecycle: ApplicationLifecycle,
                                    organizationDAO: OrganizationDAO,
                                    datasetService: DatasetService,
@@ -36,21 +36,12 @@ class UsedStorageService @Inject()(val system: ActorSystem,
   override protected def tickerInterval: FiniteDuration = config.WebKnossos.FetchUsedStorage.tickerInterval
   override protected def tickerInitialDelay: FiniteDuration = 1 minute
 
-  private val isRunning = new java.util.concurrent.atomic.AtomicBoolean(false)
-
   private val pauseAfterEachOrganization = 5 seconds
   private val organizationCountToScanPerTick = config.WebKnossos.FetchUsedStorage.scansPerTick
 
   implicit private val ctx: DBAccessContext = GlobalAccessContext
 
-  override protected def tick(): Unit =
-    if (isRunning.compareAndSet(false, true)) {
-      tickAsync().futureBox.onComplete { _ =>
-        isRunning.set(false)
-      }
-    }
-
-  private def tickAsync(): Fox[Unit] =
+  override protected def tick(): Fox[Unit] =
     for {
       organizations <- organizationDAO.findNotRecentlyScanned(config.WebKnossos.FetchUsedStorage.rescanInterval,
                                                               organizationCountToScanPerTick)
@@ -63,7 +54,7 @@ class UsedStorageService @Inject()(val system: ActorSystem,
 
   private def tryAndLog(organizationId: String, result: Fox[Unit]): Fox[Unit] =
     for {
-      box <- result.futureBox
+      box <- result.shiftBox
       _ = box match {
         case Full(_)    => ()
         case f: Failure => logger.error(f"Error during storage scan for organization with id $organizationId: $f")

@@ -2,8 +2,9 @@ package models.annotation
 
 import org.apache.pekko.actor.ActorSystem
 import com.scalableminds.util.accesscontext.GlobalAccessContext
+import com.scalableminds.util.objectid.ObjectId
 import com.scalableminds.util.time.Instant
-import com.scalableminds.util.tools.Fox
+import com.scalableminds.util.tools.{Fox, FoxImplicits}
 import com.scalableminds.webknossos.datastore.helpers.IntervalScheduler
 import com.scalableminds.webknossos.schema.Tables.AnnotationMutexesRow
 import com.typesafe.scalalogging.LazyLogging
@@ -11,7 +12,7 @@ import models.user.{UserDAO, UserService}
 import net.liftweb.common.Full
 import play.api.inject.ApplicationLifecycle
 import play.api.libs.json.{JsObject, Json}
-import utils.{ObjectId, WkConf}
+import utils.WkConf
 import utils.sql.{SimpleSQLDAO, SqlClient}
 
 import javax.inject.Inject
@@ -23,29 +24,28 @@ case class AnnotationMutex(annotationId: ObjectId, userId: ObjectId, expiry: Ins
 case class MutexResult(canEdit: Boolean, blockedByUser: Option[ObjectId])
 
 class AnnotationMutexService @Inject()(val lifecycle: ApplicationLifecycle,
-                                       val system: ActorSystem,
+                                       val actorSystem: ActorSystem,
                                        wkConf: WkConf,
                                        userDAO: UserDAO,
                                        userService: UserService,
                                        annotationMutexDAO: AnnotationMutexDAO)(implicit val ec: ExecutionContext)
     extends IntervalScheduler
+    with FoxImplicits
     with LazyLogging {
 
   override protected def tickerInterval: FiniteDuration = 1 hour
 
-  override protected def tick(): Unit = {
+  override protected def tick(): Fox[Unit] =
     for {
       deleteCount <- annotationMutexDAO.deleteExpired()
     } yield logger.info(s"Cleaned up $deleteCount expired annotation mutexes.")
-    ()
-  }
 
   private val defaultExpiryTime = wkConf.WebKnossos.Annotation.Mutex.expiryTime
 
   def tryAcquiringAnnotationMutex(annotationId: ObjectId, userId: ObjectId): Fox[MutexResult] =
     this.synchronized {
       for {
-        mutexBox <- annotationMutexDAO.findOne(annotationId).futureBox
+        mutexBox <- annotationMutexDAO.findOne(annotationId).shiftBox
         result <- mutexBox match {
           case Full(mutex) =>
             if (mutex.userId == userId)
@@ -96,7 +96,7 @@ class AnnotationMutexDAO @Inject()(sqlClient: SqlClient)(implicit ec: ExecutionC
             FROM webknossos.annotation_mutexes
             WHERE _annotation = $annotationId
             AND expiry > NOW()""".as[AnnotationMutexesRow])
-      first <- rows.headOption
+      first <- rows.headOption.toFox
       parsed = parse(first)
     } yield parsed
 

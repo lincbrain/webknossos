@@ -1,42 +1,42 @@
-import { Alert, Checkbox, Col, Divider, Modal, Radio, Row, Space, Tooltip } from "antd";
-import { useSelector } from "react-redux";
+import { Alert, Button, Checkbox, Col, Divider, Modal, Radio, Row, Space, Tooltip } from "antd";
 import React, { useState } from "react";
+import { useSelector } from "react-redux";
 
-import { startRenderAnimationJob } from "admin/admin_rest_api";
+import { startRenderAnimationJob } from "admin/rest_api";
 import Toast from "libs/toast";
 import Store, { type MeshInformation, type OxalisState, type UserBoundingBox } from "oxalis/store";
 
-import {
-  getColorLayers,
-  getEffectiveIntensityRange,
-  getLayerByName,
-  getResolutionInfo,
-  is2dDataset,
-} from "oxalis/model/accessors/dataset_accessor";
-import {
-  computeBoundingBoxFromBoundingBoxObject,
-  computeBoundingBoxObjectFromBoundingBox,
-} from "libs/utils";
-import { getUserBoundingBoxesFromState } from "oxalis/model/accessors/tracing_accessor";
-import {
-  CAMERA_POSITIONS,
-  type RenderAnimationOptions,
-  MOVIE_RESOLUTIONS,
-  type APIDataLayer,
-  APIJobType,
-  type APISegmentationLayer,
-} from "types/api_flow_types";
 import { InfoCircleOutlined } from "@ant-design/icons";
-import { PricingEnforcedSpan } from "components/pricing_enforcers";
 import {
   PricingPlanEnum,
   isFeatureAllowedByPricingPlan,
 } from "admin/organization/pricing_plan_utils";
-import type { Vector3 } from "oxalis/constants";
-import BoundingBox from "oxalis/model/bucket_data_handling/bounding_box";
-import { BoundingBoxSelection } from "./starting_job_modals";
 import { LayerSelection } from "components/layer_selection";
+import { PricingEnforcedSpan } from "components/pricing_enforcers";
+import {
+  computeBoundingBoxFromBoundingBoxObject,
+  computeBoundingBoxObjectFromBoundingBox,
+} from "libs/utils";
+import type { Vector3 } from "oxalis/constants";
+import {
+  getColorLayers,
+  getEffectiveIntensityRange,
+  getLayerByName,
+  getMagInfo,
+  is2dDataset,
+} from "oxalis/model/accessors/dataset_accessor";
 import { getAdditionalCoordinatesAsString } from "oxalis/model/accessors/flycam_accessor";
+import { getUserBoundingBoxesFromState } from "oxalis/model/accessors/tracing_accessor";
+import BoundingBox from "oxalis/model/bucket_data_handling/bounding_box";
+import {
+  type APIDataLayer,
+  APIJobType,
+  type APISegmentationLayer,
+  CAMERA_POSITIONS,
+  MOVIE_RESOLUTIONS,
+  type RenderAnimationOptions,
+} from "types/api_types";
+import { BoundingBoxSelection } from "./starting_job_modals";
 
 type Props = {
   isOpen: boolean;
@@ -94,6 +94,7 @@ function CreateAnimationModal(props: Props) {
   const { isOpen, onClose } = props;
   const dataset = useSelector((state: OxalisState) => state.dataset);
   const activeOrganization = useSelector((state: OxalisState) => state.activeOrganization);
+  const activeUser = useSelector((state: OxalisState) => state.activeUser);
 
   const colorLayers = getColorLayers(dataset);
 
@@ -205,7 +206,7 @@ function CreateAnimationModal(props: Props) {
       const layer = getLayerByName(state.dataset, layerName) as APISegmentationLayer;
       const fullLayerName = layer.fallbackLayerInfo?.name || layerName;
 
-      const adhocMagIndex = getResolutionInfo(layer.resolutions).getClosestExistingIndex(
+      const adhocMagIndex = getMagInfo(layer.resolutions).getClosestExistingIndex(
         preferredQualityForMeshAdHocComputation,
       );
       const adhocMag = layer.resolutions[adhocMagIndex];
@@ -260,7 +261,7 @@ function CreateAnimationModal(props: Props) {
     )
       return;
 
-    startRenderAnimationJob(state.dataset.owningOrganization, state.dataset.name, animationOptions);
+    startRenderAnimationJob(state.dataset.id, animationOptions);
 
     Toast.info(
       <>
@@ -285,10 +286,27 @@ function CreateAnimationModal(props: Props) {
       title="Create Animation"
       open={isOpen}
       width={700}
-      onOk={submitJob}
       onCancel={onClose}
       okText={isFeatureDisabled ? "This feature is not available" : "Start Animation"}
-      okButtonProps={{ disabled: isFeatureDisabled }}
+      footer={[
+        <Button key="cancel" onClick={onClose}>
+          Cancel
+        </Button>,
+        isFeatureDisabled ? (
+          <Tooltip
+            key="ok"
+            title="This feature is not available on your WEBKNOSSOS server. Contact your administrator."
+          >
+            <Button type="primary" disabled>
+              Start Animation
+            </Button>
+          </Tooltip>
+        ) : (
+          <Button key="ok" type="primary" onClick={submitJob} disabled={activeUser == null}>
+            Start Animation
+          </Button>
+        ),
+      ]}
     >
       <React.Fragment>
         <Row gutter={8}>

@@ -1,30 +1,26 @@
-import { useDispatch, useSelector } from "react-redux";
-import { useEffect, useRef } from "react";
-import type { OxalisState } from "oxalis/store";
-import {
-  AnnotationToolEnum,
-  MeasurementTools,
-  LongUnitToShortUnitMap,
-  type Vector3,
-} from "oxalis/constants";
-import { getPosition } from "oxalis/model/accessors/flycam_accessor";
-import { hideMeasurementTooltipAction } from "oxalis/model/actions/ui_actions";
-import getSceneController from "oxalis/controller/scene_controller_provider";
 import { CopyOutlined } from "@ant-design/icons";
 import { copyToClipboad } from "admin/voxelytics/utils";
-import {
-  formatNumberToLength,
-  formatLengthAsVx,
-  formatAreaAsVx,
-  formatNumberToArea,
-} from "libs/format_utils";
 import { Tooltip } from "antd";
+import {
+  formatAreaAsVx,
+  formatLengthAsVx,
+  formatNumberToArea,
+  formatNumberToLength,
+} from "libs/format_utils";
+import { clamp } from "libs/utils";
+import { LongUnitToShortUnitMap, type Vector3 } from "oxalis/constants";
+import getSceneController from "oxalis/controller/scene_controller_provider";
+import { getPosition } from "oxalis/model/accessors/flycam_accessor";
+import { AnnotationTool, MeasurementTools } from "oxalis/model/accessors/tool_accessor";
 import {
   calculateMaybePlaneScreenPos,
   getInputCatcherRect,
 } from "oxalis/model/accessors/view_mode_accessor";
-import { clamp } from "libs/utils";
+import { hideMeasurementTooltipAction } from "oxalis/model/actions/ui_actions";
 import dimensions from "oxalis/model/dimensions";
+import type { OxalisState } from "oxalis/store";
+import { useEffect, useRef } from "react";
+import { useDispatch, useSelector } from "react-redux";
 
 const TOOLTIP_HEIGHT = 48;
 const ADDITIONAL_OFFSET = 12;
@@ -60,7 +56,7 @@ export default function DistanceMeasurementTooltip() {
   const currentPosition = getPosition(flycam);
   const { areaMeasurementGeometry, lineMeasurementGeometry } = getSceneController();
   const activeGeometry =
-    activeTool === AnnotationToolEnum.LINE_MEASUREMENT
+    activeTool === AnnotationTool.LINE_MEASUREMENT
       ? lineMeasurementGeometry
       : areaMeasurementGeometry;
   const orthoView = activeGeometry.viewport;
@@ -91,14 +87,14 @@ export default function DistanceMeasurementTooltip() {
   let valueInMetricUnit = "";
   const notScalingFactor = [1, 1, 1] as Vector3;
 
-  if (activeTool === AnnotationToolEnum.LINE_MEASUREMENT) {
+  if (activeTool === AnnotationTool.LINE_MEASUREMENT) {
     const { lineMeasurementGeometry } = getSceneController();
     valueInVx = formatLengthAsVx(lineMeasurementGeometry.getDistance(notScalingFactor), 1);
     valueInMetricUnit = formatNumberToLength(
       lineMeasurementGeometry.getDistance(voxelSize.factor),
       LongUnitToShortUnitMap[voxelSize.unit],
     );
-  } else if (activeTool === AnnotationToolEnum.AREA_MEASUREMENT) {
+  } else if (activeTool === AnnotationTool.AREA_MEASUREMENT) {
     const { areaMeasurementGeometry } = getSceneController();
     valueInVx = formatAreaAsVx(areaMeasurementGeometry.getArea(notScalingFactor), 1);
     valueInMetricUnit = formatNumberToArea(

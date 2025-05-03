@@ -1,27 +1,44 @@
 import {
   DeleteOutlined,
+  EllipsisOutlined,
   LoadingOutlined,
   ReloadOutlined,
-  VerticalAlignBottomOutlined,
-  EllipsisOutlined,
   TagsOutlined,
+  VerticalAlignBottomOutlined,
 } from "@ant-design/icons";
-import { List, type MenuProps, App } from "antd";
-import { useDispatch, useSelector } from "react-redux";
+import { App, List, type MenuProps } from "antd";
 import Checkbox, { type CheckboxChangeEvent } from "antd/lib/checkbox/Checkbox";
 import React from "react";
+import { useDispatch, useSelector } from "react-redux";
 
+import type { MenuItemType } from "antd/es/menu/interface";
 import classnames from "classnames";
-import * as Utils from "libs/utils";
-import type { APISegmentationLayer, APIMeshFile } from "types/api_flow_types";
-import type { Vector3, Vector4 } from "oxalis/constants";
 import {
+  ChangeColorMenuItemContent,
+  ChangeRGBAColorMenuItemContent,
+} from "components/color_picker";
+import FastTooltip from "components/fast_tooltip";
+import { V4 } from "libs/mjs";
+import Toast from "libs/toast";
+import * as Utils from "libs/utils";
+import type { Vector3, Vector4 } from "oxalis/constants";
+import Constants from "oxalis/constants";
+import { getSegmentIdForPosition } from "oxalis/controller/combinations/volume_handlers";
+import {
+  getAdditionalCoordinatesAsString,
+  getPosition,
+} from "oxalis/model/accessors/flycam_accessor";
+import {
+  getSegmentColorAsRGBA,
+  getSegmentName,
+} from "oxalis/model/accessors/volumetracing_accessor";
+import {
+  refreshMeshAction,
+  removeMeshAction,
   triggerMeshDownloadAction,
   updateMeshVisibilityAction,
-  removeMeshAction,
-  refreshMeshAction,
 } from "oxalis/model/actions/annotation_actions";
-import EditableTextLabel from "oxalis/view/components/editable_text_label";
+import { rgbaToCSS } from "oxalis/shaders/utils.glsl";
 import type {
   ActiveMappingInfo,
   MeshInformation,
@@ -30,24 +47,12 @@ import type {
   VolumeTracing,
 } from "oxalis/store";
 import Store from "oxalis/store";
-import {
-  getSegmentColorAsRGBA,
-  getSegmentName,
-} from "oxalis/model/accessors/volumetracing_accessor";
-import Toast from "libs/toast";
-import { rgbaToCSS } from "oxalis/shaders/utils.glsl";
-import { V4 } from "libs/mjs";
-import { ChangeColorMenuItemContent } from "components/color_picker";
-import type { MenuItemType } from "antd/es/menu/interface";
-import { withMappingActivationConfirmation } from "./segments_view_helper";
-import type { AdditionalCoordinate } from "types/api_flow_types";
-import {
-  getAdditionalCoordinatesAsString,
-  getPosition,
-} from "oxalis/model/accessors/flycam_accessor";
-import FastTooltip from "components/fast_tooltip";
+import EditableTextLabel from "oxalis/view/components/editable_text_label";
 import { getContextMenuPositionFromEvent } from "oxalis/view/context_menu";
-import { getSegmentIdForPosition } from "oxalis/controller/combinations/volume_handlers";
+import type { APIMeshFile, APISegmentationLayer } from "types/api_types";
+import type { AdditionalCoordinate } from "types/api_types";
+import { LoadMeshMenuItemLabel } from "./load_mesh_menu_item_label";
+import { withMappingActivationConfirmation } from "./segments_view_helper";
 
 const ALSO_DELETE_SEGMENT_FROM_LIST_KEY = "also-delete-segment-from-list";
 
@@ -58,8 +63,11 @@ export function ColoredDotIcon({ colorRGBA }: { colorRGBA: Vector4 }) {
     <span
       className="circle"
       style={{
-        paddingLeft: "10px",
+        paddingLeft: 10,
         backgroundColor: rgbaCss,
+        alignSelf: "flex-start",
+        marginTop: 5,
+        marginLeft: 1,
       }}
     />
   );
@@ -77,8 +85,10 @@ const getLoadPrecomputedMeshMenuItem = (
   hideContextMenu: (_ignore?: any) => void,
   layerName: string | null | undefined,
   mappingInfo: ActiveMappingInfo,
+  activeVolumeTracing: VolumeTracing | null | undefined,
 ) => {
   const mappingName = currentMeshFile != null ? currentMeshFile.mappingName : undefined;
+
   return {
     key: "loadPrecomputedMesh",
     disabled: !currentMeshFile,
@@ -111,16 +121,10 @@ const getLoadPrecomputedMeshMenuItem = (
       mappingInfo,
     ),
     label: (
-      <FastTooltip
-        key="tooltip"
-        title={
-          currentMeshFile != null
-            ? `Load mesh for centered segment from file ${currentMeshFile.meshFileName}`
-            : "There is no mesh file."
-        }
-      >
-        Load Mesh (precomputed)
-      </FastTooltip>
+      <LoadMeshMenuItemLabel
+        currentMeshFile={currentMeshFile}
+        volumeTracing={activeVolumeTracing}
+      />
     ),
   };
 };
@@ -157,7 +161,7 @@ const getComputeMeshAdHocMenuItem = (
       );
     },
     disabled,
-    label: <FastTooltip title={title}>Compute Mesh (ad hoc)</FastTooltip>,
+    label: <FastTooltip title={title}>Compute Mesh (ad-hoc)</FastTooltip>,
   };
 };
 
@@ -206,6 +210,7 @@ type Props = {
   ) => void;
   removeSegment: (arg0: number, arg2: string) => void;
   deleteSegmentData: (arg0: number, arg2: string, callback?: () => void) => void;
+  setMeshOpacity: (arg0: number, arg1: string, arg2: number) => void;
   onSelectSegment: (arg0: Segment) => void;
   visibleSegmentationLayer: APISegmentationLayer | null | undefined;
   loadAdHocMesh: (
@@ -232,7 +237,7 @@ type Props = {
   currentMeshFile: APIMeshFile | null | undefined;
   onRenameStart: () => void;
   onRenameEnd: () => void;
-  multiSelectMenu: MenuProps;
+  getMultiSelectMenu: () => MenuProps;
   activeVolumeTracing: VolumeTracing | null | undefined;
   showContextMenuAt: (xPos: number, yPos: number, menu: MenuProps) => void;
   hideContextMenu: () => void;
@@ -385,6 +390,7 @@ function _SegmentListItem({
   allowUpdate,
   updateSegment,
   removeSegment,
+  setMeshOpacity,
   deleteSegmentData,
   onSelectSegment,
   visibleSegmentationLayer,
@@ -397,7 +403,7 @@ function _SegmentListItem({
   currentMeshFile,
   onRenameStart,
   onRenameEnd,
-  multiSelectMenu,
+  getMultiSelectMenu,
   activeVolumeTracing,
   showContextMenuAt,
   hideContextMenu,
@@ -409,6 +415,7 @@ function _SegmentListItem({
     (state: OxalisState) => getSegmentColorAsRGBA(state, segment.id),
     (a: Vector4, b: Vector4) => V4.isEqual(a, b),
   );
+
   const isHoveredSegmentId = useSelector(
     (state: OxalisState) => state.temporaryConfiguration.hoveredSegmentId === segment.id,
   );
@@ -417,129 +424,157 @@ function _SegmentListItem({
     return centeredSegmentId === segment.id;
   });
 
-  const createSegmentContextMenu = (): MenuProps => ({
-    items: [
-      getLoadPrecomputedMeshMenuItem(
-        segment,
-        currentMeshFile,
-        loadPrecomputedMesh,
-        hideContextMenu,
-        visibleSegmentationLayer != null ? visibleSegmentationLayer.name : null,
-        mappingInfo,
-      ),
-      getComputeMeshAdHocMenuItem(
-        segment,
-        loadAdHocMesh,
-        visibleSegmentationLayer != null,
-        hideContextMenu,
-      ),
-      getMakeSegmentActiveMenuItem(
-        segment,
-        setActiveCell,
-        activeCellId,
-        isEditingDisabled,
-        hideContextMenu,
-      ),
-      {
-        key: `changeSegmentColor-${segment.id}`,
-        label: (
-          <ChangeColorMenuItemContent
-            isDisabled={false}
-            title="Change Segment Color"
-            onSetColor={(color, createsNewUndoState) => {
-              if (visibleSegmentationLayer == null) {
-                return;
-              }
-              updateSegment(
-                segment.id,
-                {
-                  color,
-                },
-                visibleSegmentationLayer.name,
-                createsNewUndoState,
-              );
-            }}
-            rgb={Utils.take3(segmentColorRGBA)}
-          />
+  const createSegmentContextMenu = (): MenuProps => {
+    const segmentColorWithMeshOpacity: Vector4 = [
+      segmentColorRGBA[0],
+      segmentColorRGBA[1],
+      segmentColorRGBA[2],
+      mesh != null ? mesh.opacity : Constants.DEFAULT_MESH_OPACITY,
+    ];
+    return {
+      items: [
+        getLoadPrecomputedMeshMenuItem(
+          segment,
+          currentMeshFile,
+          loadPrecomputedMesh,
+          hideContextMenu,
+          visibleSegmentationLayer != null ? visibleSegmentationLayer.name : null,
+          mappingInfo,
+          activeVolumeTracing,
         ),
-      },
-      {
-        key: "resetSegmentColor",
-        disabled: segment.color == null,
-        onClick: () => {
-          if (visibleSegmentationLayer == null) {
-            return;
-          }
-          updateSegment(
-            segment.id,
-            {
-              color: null,
-            },
-            visibleSegmentationLayer.name,
-            true,
-          );
+        getComputeMeshAdHocMenuItem(
+          segment,
+          loadAdHocMesh,
+          visibleSegmentationLayer != null,
+          hideContextMenu,
+        ),
+        getMakeSegmentActiveMenuItem(
+          segment,
+          setActiveCell,
+          activeCellId,
+          isEditingDisabled,
+          hideContextMenu,
+        ),
+        {
+          key: `changeSegmentColor-${segment.id}`,
+          label: mesh?.isVisible ? (
+            <ChangeRGBAColorMenuItemContent
+              title="Change Segment Color"
+              onSetColor={(color, createsNewUndoState) => {
+                if (visibleSegmentationLayer == null) {
+                  return;
+                }
+                updateSegment(
+                  segment.id,
+                  {
+                    color: color.slice(0, 3) as Vector3,
+                  },
+                  visibleSegmentationLayer.name,
+                  createsNewUndoState,
+                );
+                setMeshOpacity(segment.id, visibleSegmentationLayer.name, color[3]);
+              }}
+              rgba={segmentColorWithMeshOpacity}
+            />
+          ) : (
+            <ChangeColorMenuItemContent
+              isDisabled={false}
+              title="Change Segment Color"
+              onSetColor={(color, createsNewUndoState) => {
+                if (visibleSegmentationLayer == null) {
+                  return;
+                }
+                updateSegment(
+                  segment.id,
+                  {
+                    color,
+                  },
+                  visibleSegmentationLayer.name,
+                  createsNewUndoState,
+                );
+              }}
+              rgb={Utils.take3(segmentColorRGBA)}
+            />
+          ),
         },
-        label: "Reset Segment Color",
-      },
-      {
-        key: "removeSegmentFromList",
-        onClick: () => {
-          if (visibleSegmentationLayer == null) {
-            return;
-          }
-          removeSegment(segment.id, visibleSegmentationLayer.name);
-          hideContextMenu();
-        },
-        label: "Remove Segment From List",
-      },
-      {
-        key: "deleteSegmentData",
-        onClick: () => {
-          if (visibleSegmentationLayer == null) {
-            return;
-          }
-
-          modal.confirm({
-            content: `Are you sure you want to delete the data of segment ${getSegmentName(
-              segment,
+        {
+          key: "resetSegmentColor",
+          disabled: segment.color == null,
+          onClick: () => {
+            if (visibleSegmentationLayer == null) {
+              return;
+            }
+            updateSegment(
+              segment.id,
+              {
+                color: null,
+              },
+              visibleSegmentationLayer.name,
               true,
-            )}? This operation will set all voxels with id ${segment.id} to 0.`,
-            okText: "Yes, delete",
-            okType: "danger",
-            onOk: async () => {
-              await new Promise<void>((resolve) =>
-                deleteSegmentData(segment.id, visibleSegmentationLayer.name, resolve),
-              );
-
-              Toast.info(
-                <span>
-                  The data of segment {getSegmentName(segment, true)} was deleted.{" "}
-                  <a
-                    href="#"
-                    onClick={() => {
-                      removeSegment(segment.id, visibleSegmentationLayer.name);
-                      Toast.close(ALSO_DELETE_SEGMENT_FROM_LIST_KEY);
-                    }}
-                  >
-                    Also remove from list.
-                  </a>
-                </span>,
-                { key: ALSO_DELETE_SEGMENT_FROM_LIST_KEY },
-              );
-            },
-          });
-
-          hideContextMenu();
+            );
+          },
+          label: "Reset Segment Color",
         },
-        disabled:
-          activeVolumeTracing == null ||
-          !activeVolumeTracing.hasSegmentIndex ||
-          // Not supported for fallback layers, yet.
-          activeVolumeTracing.fallbackLayer != null,
-        label: "Delete Segment's Data",
-      },
-    ],
-  });
+        {
+          key: "removeSegmentFromList",
+          onClick: () => {
+            if (visibleSegmentationLayer == null) {
+              return;
+            }
+            removeSegment(segment.id, visibleSegmentationLayer.name);
+            hideContextMenu();
+          },
+          label: "Remove Segment From List",
+        },
+        {
+          key: "deleteSegmentData",
+          onClick: () => {
+            if (visibleSegmentationLayer == null) {
+              return;
+            }
+
+            modal.confirm({
+              content: `Are you sure you want to delete the data of segment ${getSegmentName(
+                segment,
+                true,
+              )}? This operation will set all voxels with id ${segment.id} to 0.`,
+              okText: "Yes, delete",
+              okType: "danger",
+              onOk: async () => {
+                await new Promise<void>((resolve) =>
+                  deleteSegmentData(segment.id, visibleSegmentationLayer.name, resolve),
+                );
+
+                Toast.info(
+                  <span>
+                    The data of segment {getSegmentName(segment, true)} was deleted.{" "}
+                    <a
+                      href="#"
+                      onClick={() => {
+                        removeSegment(segment.id, visibleSegmentationLayer.name);
+                        Toast.close(ALSO_DELETE_SEGMENT_FROM_LIST_KEY);
+                      }}
+                    >
+                      Also remove from list.
+                    </a>
+                  </span>,
+                  { key: ALSO_DELETE_SEGMENT_FROM_LIST_KEY },
+                );
+              },
+            });
+
+            hideContextMenu();
+          },
+          disabled:
+            activeVolumeTracing == null ||
+            !activeVolumeTracing.hasSegmentIndex ||
+            // Not supported for fallback layers, yet.
+            activeVolumeTracing.fallbackLayer != null,
+          label: "Delete Segment's Data",
+        },
+      ],
+    };
+  };
 
   function getSegmentIdDetails() {
     // Only if segment.name is truthy, render additional info.
@@ -559,7 +594,7 @@ function _SegmentListItem({
       x,
       y,
       (selectedSegmentIds || []).length > 1 && selectedSegmentIds?.includes(segment.id)
-        ? multiSelectMenu
+        ? getMultiSelectMenu()
         : createSegmentContextMenu(),
     );
   };
@@ -578,7 +613,7 @@ function _SegmentListItem({
       onContextMenu={onOpenContextMenu}
     >
       <div>
-        <div style={{ display: "inline-flex", alignItems: "center" }}>
+        <div style={{ display: "inline-flex", alignItems: "center", width: "100%" }}>
           <ColoredDotIcon colorRGBA={segmentColorRGBA} />
           <EditableTextLabel
             value={getSegmentName(segment)}
