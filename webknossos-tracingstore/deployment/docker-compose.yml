@@ -2,7 +2,7 @@ version: "2.1"
 
 services:
   webknossos-tracingstore:
-    image: scalableminds/webknossos-tracingstore:${DATASTORE_TAG}
+    image: akanzer/webknossos-tracingstore:${DATASTORE_TAG}
     command:
       - -J-Xmx20G
       - -J-Xms1G
