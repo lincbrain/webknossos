@@ -11,7 +11,7 @@ import models.dataset.PublicationDAO
 import org.apache.commons.io.output.ByteArrayOutputStream
 
 import java.nio.charset.StandardCharsets
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext
 
 case class SitemapURL(url: String,
                       lastMod: Option[String] = None,
@@ -20,7 +20,7 @@ case class SitemapURL(url: String,
 
 class SitemapWriter @Inject()(publicationDAO: PublicationDAO, wkConf: WkConf)(implicit ec: ExecutionContext)
     extends FoxImplicits {
-  private val proxyURLs = wkConf.Proxy.routes.filter(!_.contains("*")).map(SitemapURL(_))
+  private val proxyURLs = wkConf.AboutPageRedirect.routes.filter(!_.contains("*")).map(SitemapURL(_))
   private lazy val outputFactory = XMLOutputFactory.newInstance()
 
   def getSitemap(prefix: String): Fox[String] = {
@@ -40,7 +40,7 @@ class SitemapWriter @Inject()(publicationDAO: PublicationDAO, wkConf: WkConf)(im
       _ = writer.writeStartDocument()
       _ <- Xml.withinElement("urlset") {
         for {
-          _ <- Future.successful(writer.writeAttribute("xmlns", "http://www.sitemaps.org/schemas/sitemap/0.9"))
+          _ <- Fox.successful(writer.writeAttribute("xmlns", "http://www.sitemaps.org/schemas/sitemap/0.9"))
           allUrls <- getAllURLs
           _ = allUrls.foreach(writeURL(_, prefix))
         } yield ()

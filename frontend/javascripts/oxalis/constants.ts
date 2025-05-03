@@ -1,4 +1,4 @@
-import type { AdditionalCoordinate } from "types/api_flow_types";
+import type { AdditionalCoordinate } from "types/api_types";
 
 export const ViewModeValues = ["orthogonal", "flight", "oblique"] as ViewMode[];
 
@@ -14,6 +14,8 @@ export type Vector3 = [number, number, number];
 export type Vector4 = [number, number, number, number];
 export type Vector5 = [number, number, number, number, number];
 export type Vector6 = [number, number, number, number, number, number];
+
+export type NestedMatrix4 = [Vector4, Vector4, Vector4, Vector4]; // Represents a row major matrix.
 
 // For 3D data BucketAddress = x, y, z, mag
 // For higher dimensional data, BucketAddress = x, y, z, mag, [{name: "t", value: t}, ...]
@@ -179,49 +181,7 @@ export enum ControlModeEnum {
   VIEW = "VIEW",
 }
 export type ControlMode = keyof typeof ControlModeEnum;
-export enum AnnotationToolEnum {
-  MOVE = "MOVE",
-  SKELETON = "SKELETON",
-  BRUSH = "BRUSH",
-  ERASE_BRUSH = "ERASE_BRUSH",
-  TRACE = "TRACE",
-  ERASE_TRACE = "ERASE_TRACE",
-  FILL_CELL = "FILL_CELL",
-  PICK_CELL = "PICK_CELL",
-  QUICK_SELECT = "QUICK_SELECT",
-  BOUNDING_BOX = "BOUNDING_BOX",
-  PROOFREAD = "PROOFREAD",
-  LINE_MEASUREMENT = "LINE_MEASUREMENT",
-  AREA_MEASUREMENT = "AREA_MEASUREMENT",
-}
-export const VolumeTools: Array<keyof typeof AnnotationToolEnum> = [
-  AnnotationToolEnum.BRUSH,
-  AnnotationToolEnum.ERASE_BRUSH,
-  AnnotationToolEnum.TRACE,
-  AnnotationToolEnum.ERASE_TRACE,
-  AnnotationToolEnum.FILL_CELL,
-  AnnotationToolEnum.PICK_CELL,
-  AnnotationToolEnum.QUICK_SELECT,
-];
-export const ToolsWithOverwriteCapabilities: Array<keyof typeof AnnotationToolEnum> = [
-  AnnotationToolEnum.TRACE,
-  AnnotationToolEnum.BRUSH,
-  AnnotationToolEnum.ERASE_TRACE,
-  AnnotationToolEnum.ERASE_BRUSH,
-  AnnotationToolEnum.QUICK_SELECT,
-];
-export const ToolsWithInterpolationCapabilities: Array<keyof typeof AnnotationToolEnum> = [
-  AnnotationToolEnum.TRACE,
-  AnnotationToolEnum.BRUSH,
-  AnnotationToolEnum.QUICK_SELECT,
-];
 
-export const MeasurementTools: Array<keyof typeof AnnotationToolEnum> = [
-  AnnotationToolEnum.LINE_MEASUREMENT,
-  AnnotationToolEnum.AREA_MEASUREMENT,
-];
-
-export type AnnotationTool = keyof typeof AnnotationToolEnum;
 export enum ContourModeEnum {
   DRAW = "DRAW",
   DELETE = "DELETE",
@@ -333,28 +293,33 @@ const Constants = {
     _2D: (process.env.IS_TESTING ? [512, 512, 1] : [768, 768, 1]) as Vector3,
     _3D: (process.env.IS_TESTING ? [64, 64, 32] : [96, 96, 96]) as Vector3,
   },
+  // When the user uses the "isFloodfillRestrictedToBoundingBox" setting,
+  // we are more lax with the flood fill extent.
+  FLOOD_FILL_MULTIPLIER_FOR_BBOX_RESTRICTION: 10,
   MAXIMUM_DATE_TIMESTAMP: 8640000000000000,
   SCALEBAR_HEIGHT: 22,
   SCALEBAR_OFFSET: 10,
   OBJECT_ID_STRING_LENGTH: 24,
   REGISTER_SEGMENTS_BB_MAX_VOLUME_VX: 512 * 512 * 512,
   REGISTER_SEGMENTS_BB_MAX_SEGMENT_COUNT: 5000,
+  DEFAULT_MESH_OPACITY: 1,
 };
 export default Constants;
 
 export type TypedArray =
-  | Int8Array
   | Uint8Array
   | Uint8ClampedArray
-  | Int16Array
+  | Int8Array
   | Uint16Array
-  | Int32Array
+  | Int16Array
   | Uint32Array
+  | Int32Array
   | Float32Array
   | Float64Array
-  | BigUint64Array;
+  | BigUint64Array
+  | BigInt64Array;
 
-export type TypedArrayWithoutBigInt = Exclude<TypedArray, BigUint64Array>;
+export type TypedArrayWithoutBigInt = Exclude<TypedArray, BigUint64Array | BigInt64Array>;
 
 export const PRIMARY_COLOR: Vector3 = [86, 96, 255];
 
@@ -419,7 +384,7 @@ export enum UnitLong {
   Em = "exameter",
   Zm = "zettameter",
   Ym = "yottameter",
-  Å = "ångström",
+  Å = "angstrom",
   in = "inch",
   ft = "foot",
   yd = "yard",
@@ -486,3 +451,15 @@ export const LongUnitToShortUnitMap: Record<UnitLong, UnitShort> = {
 };
 
 export const AllUnits = Object.values(UnitLong);
+
+export enum AnnotationTypeFilterEnum {
+  ONLY_ANNOTATIONS_KEY = "Explorational",
+  ONLY_TASKS_KEY = "Task",
+  TASKS_AND_ANNOTATIONS_KEY = "Task,Explorational",
+}
+
+export enum AnnotationStateFilterEnum {
+  ALL = "All",
+  ACTIVE = "Active",
+  FINISHED_OR_ARCHIVED = "Finished",
+}

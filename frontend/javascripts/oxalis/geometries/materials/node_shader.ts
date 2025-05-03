@@ -1,20 +1,20 @@
-import * as THREE from "three";
+import { M4x4 } from "libs/mjs";
+import type TPS3D from "libs/thin_plate_spline";
+import _ from "lodash";
 import { ViewModeValues, ViewModeValuesIndices } from "oxalis/constants";
 import type { Uniforms } from "oxalis/geometries/materials/plane_material_factory";
-import { getBaseVoxelInUnit } from "oxalis/model/scaleinfo";
+import { getTransformsForSkeletonLayer } from "oxalis/model/accessors/dataset_layer_transformation_accessor";
 import { getZoomValue } from "oxalis/model/accessors/flycam_accessor";
 import { listenToStoreProperty } from "oxalis/model/helpers/listener_helpers";
-import { Store } from "oxalis/singletons";
 import shaderEditor from "oxalis/model/helpers/shader_editor";
-import _ from "lodash";
-import { formatNumberAsGLSLFloat } from "oxalis/shaders/utils.glsl";
-import { getTransformsForSkeletonLayer } from "oxalis/model/accessors/dataset_accessor";
-import { M4x4 } from "libs/mjs";
+import { getBaseVoxelInUnit } from "oxalis/model/scaleinfo";
 import {
   generateCalculateTpsOffsetFunction,
   generateTpsInitialization,
 } from "oxalis/shaders/thin_plate_spline.glsl";
-import type TPS3D from "libs/thin_plate_spline";
+import { formatNumberAsGLSLFloat } from "oxalis/shaders/utils.glsl";
+import { Store } from "oxalis/singletons";
+import * as THREE from "three";
 
 export const NodeTypes = {
   INVALID: 0.0,
@@ -29,6 +29,7 @@ class NodeShader {
   uniforms: Uniforms = {};
   scaledTps: TPS3D | null = null;
   oldVertexShaderCode: string | null = null;
+  storePropertyUnsubscribers: Array<() => void> = [];
 
   constructor(treeColorTexture: THREE.DataTexture) {
     this.setupUniforms(treeColorTexture);
@@ -94,28 +95,30 @@ class NodeShader {
       };
     });
 
-    listenToStoreProperty(
-      (_state) => _state.userConfiguration.highlightCommentedNodes,
-      (highlightCommentedNodes) => {
-        this.uniforms.highlightCommentedNodes.value = highlightCommentedNodes ? 1 : 0;
-      },
-    );
-    listenToStoreProperty(
-      (storeState) => storeState.temporaryConfiguration.viewMode,
-      (viewMode) => {
-        this.uniforms.viewMode.value = ViewModeValues.indexOf(viewMode);
-      },
-      true,
-    );
-    listenToStoreProperty(
-      (storeState) => storeState.flycam.additionalCoordinates,
-      (additionalCoordinates) => {
-        _.each(additionalCoordinates, (coord, idx) => {
-          this.uniforms[`currentAdditionalCoord_${idx}`].value = coord.value;
-        });
-      },
-      true,
-    );
+    this.storePropertyUnsubscribers = [
+      listenToStoreProperty(
+        (_state) => _state.userConfiguration.highlightCommentedNodes,
+        (highlightCommentedNodes) => {
+          this.uniforms.highlightCommentedNodes.value = highlightCommentedNodes ? 1 : 0;
+        },
+      ),
+      listenToStoreProperty(
+        (storeState) => storeState.temporaryConfiguration.viewMode,
+        (viewMode) => {
+          this.uniforms.viewMode.value = ViewModeValues.indexOf(viewMode);
+        },
+        true,
+      ),
+      listenToStoreProperty(
+        (storeState) => storeState.flycam.additionalCoordinates,
+        (additionalCoordinates) => {
+          _.each(additionalCoordinates, (coord, idx) => {
+            this.uniforms[`currentAdditionalCoord_${idx}`].value = coord.value;
+          });
+        },
+        true,
+      ),
+    ];
 
     const dataset = Store.getState().dataset;
     const nativelyRenderedLayerName =
@@ -126,28 +129,30 @@ class NodeShader {
       value: M4x4.transpose(affineMatrix),
     };
 
-    listenToStoreProperty(
-      (storeState) =>
-        getTransformsForSkeletonLayer(
-          storeState.dataset,
-          storeState.datasetConfiguration.nativelyRenderedLayerName,
-        ),
-      (skeletonTransforms) => {
-        const transforms = skeletonTransforms;
-        const { affineMatrix } = transforms;
+    this.storePropertyUnsubscribers.push(
+      listenToStoreProperty(
+        (storeState) =>
+          getTransformsForSkeletonLayer(
+            storeState.dataset,
+            storeState.datasetConfiguration.nativelyRenderedLayerName,
+          ),
+        (skeletonTransforms) => {
+          const transforms = skeletonTransforms;
+          const { affineMatrix } = transforms;
 
-        const scaledTps = transforms.type === "thin_plate_spline" ? transforms.scaledTps : null;
+          const scaledTps = transforms.type === "thin_plate_spline" ? transforms.scaledTps : null;
 
-        if (scaledTps) {
-          this.scaledTps = scaledTps;
-        } else {
-          this.scaledTps = null;
-        }
+          if (scaledTps) {
+            this.scaledTps = scaledTps;
+          } else {
+            this.scaledTps = null;
+          }
 
-        this.uniforms["transform"].value = M4x4.transpose(affineMatrix);
+          this.uniforms["transform"].value = M4x4.transpose(affineMatrix);
 
-        this.recomputeVertexShader();
-      },
+          this.recomputeVertexShader();
+        },
+      ),
     );
   }
 
@@ -421,6 +426,18 @@ void main()
       }
     }
 }`;
+  }
+
+  destroy() {
+    for (const fn of this.storePropertyUnsubscribers) {
+      fn();
+    }
+    this.storePropertyUnsubscribers = [];
+
+    // Avoid memory leaks on tear down.
+    for (const key of Object.keys(this.uniforms)) {
+      this.uniforms[key].value = null;
+    }
   }
 }
 

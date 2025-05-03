@@ -2,6 +2,7 @@ package models.user
 
 import org.apache.pekko.actor.ActorSystem
 import com.scalableminds.util.accesscontext.DBAccessContext
+import com.scalableminds.util.objectid.ObjectId
 import com.scalableminds.util.time.Instant
 import com.scalableminds.util.tools.{Fox, FoxImplicits}
 import com.scalableminds.webknossos.schema.Tables._
@@ -13,8 +14,8 @@ import models.organization.OrganizationDAO
 import security.RandomIDGenerator
 import slick.jdbc.PostgresProfile.api._
 import slick.lifted.Rep
-import utils.sql.{SqlClient, SQLDAO}
-import utils.{ObjectId, WkConf}
+import utils.sql.{SQLDAO, SqlClient}
+import utils.WkConf
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -42,7 +43,7 @@ class InviteService @Inject()(conf: WkConf,
   def inviteOneRecipient(recipient: String, sender: User, autoActivate: Boolean)(
       implicit ctx: DBAccessContext): Fox[Unit] =
     for {
-      invite <- generateInvite(sender._organization, autoActivate)
+      invite <- Fox.fromFuture(generateInvite(sender._organization, autoActivate))
       _ <- inviteDAO.insertOne(invite)
       _ <- sendInviteMail(recipient, sender, invite)
     } yield ()

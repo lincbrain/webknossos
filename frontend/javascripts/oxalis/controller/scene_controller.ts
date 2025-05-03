@@ -1,10 +1,11 @@
-import * as THREE from "three";
 import app from "app";
 import type Maybe from "data.maybe";
 import { V3 } from "libs/mjs";
+import Toast from "libs/toast";
 import * as Utils from "libs/utils";
 import window from "libs/window";
 import _ from "lodash";
+
 import type {
   BoundingBoxType,
   OrthoView,
@@ -17,9 +18,10 @@ import constants, {
   OrthoViewValuesWithoutTDView,
   TDViewDisplayModeEnum,
 } from "oxalis/constants";
-import { getRenderer } from "oxalis/controller/renderer";
+import { destroyRenderer, getRenderer } from "oxalis/controller/renderer";
 import { setSceneController } from "oxalis/controller/scene_controller_provider";
 import type ArbitraryPlane from "oxalis/geometries/arbitrary_plane";
+import computeSplitBoundaryMeshWithSplines from "oxalis/geometries/compute_split_boundary_mesh_with_splines";
 import Cube from "oxalis/geometries/cube";
 import {
   ContourGeometry,
@@ -28,13 +30,21 @@ import {
 } from "oxalis/geometries/helper_geometries";
 import Plane from "oxalis/geometries/plane";
 import Skeleton from "oxalis/geometries/skeleton";
+import { reuseInstanceOnEquality } from "oxalis/model/accessors/accessor_helpers";
 import {
   getDataLayers,
   getDatasetBoundingBox,
   getLayerBoundingBox,
+  getLayerByName,
   getLayerNameToIsDisabled,
-  getTransformsForLayerOrNull,
+  getSegmentationLayers,
+  getVisibleSegmentationLayers,
 } from "oxalis/model/accessors/dataset_accessor";
+import {
+  getTransformsForLayer,
+  getTransformsForLayerOrNull,
+  getTransformsForSkeletonLayer,
+} from "oxalis/model/accessors/dataset_layer_transformation_accessor";
 import { getActiveMagIndicesForLayers, getPosition } from "oxalis/model/accessors/flycam_accessor";
 import { getSkeletonTracing } from "oxalis/model/accessors/skeletontracing_accessor";
 import { getSomeTracing } from "oxalis/model/accessors/tracing_accessor";
@@ -42,18 +52,30 @@ import { getPlaneScalingFactor } from "oxalis/model/accessors/view_mode_accessor
 import { sceneControllerReadyAction } from "oxalis/model/actions/actions";
 import Dimensions from "oxalis/model/dimensions";
 import { listenToStoreProperty } from "oxalis/model/helpers/listener_helpers";
+import type { Transform } from "oxalis/model/helpers/transformation_helpers";
 import { getVoxelPerUnit } from "oxalis/model/scaleinfo";
 import { Model } from "oxalis/singletons";
 import type { OxalisState, SkeletonTracing, UserBoundingBox } from "oxalis/store";
 import Store from "oxalis/store";
+import * as THREE from "three";
+import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
+import type CustomLOD from "./custom_lod";
 import SegmentMeshController from "./segment_mesh_controller";
+
+// Add the extension functions
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const CUBE_COLOR = 0x999999;
 const LAYER_CUBE_COLOR = 0xffff99;
 
+const getVisibleSegmentationLayerNames = reuseInstanceOnEquality((storeState: OxalisState) =>
+  getVisibleSegmentationLayers(storeState).map((l) => l.name),
+);
+
 class SceneController {
   skeletons: Record<number, Skeleton> = {};
-  current: number;
   isPlaneVisible: OrthoViewMap<boolean>;
   planeShift: Vector3;
   datasetBoundingBox!: Cube;
@@ -69,18 +91,17 @@ class SceneController {
   lineMeasurementGeometry!: LineMeasurementGeometry;
   areaMeasurementGeometry!: ContourGeometry;
   planes!: OrthoViewWithoutTDMap<Plane>;
-  rootNode!: THREE.Object3D;
+  rootNode!: THREE.Group;
   renderer!: THREE.WebGLRenderer;
   scene!: THREE.Scene;
-  rootGroup!: THREE.Object3D;
-  // Group for all meshes including a light.
-  meshesRootGroup!: THREE.Object3D;
+  rootGroup!: THREE.Group;
   segmentMeshController: SegmentMeshController;
+  storePropertyUnsubscribers: Array<() => void>;
+  splitBoundaryMesh: THREE.Mesh | null = null;
 
   // This class collects all the meshes displayed in the Skeleton View and updates position and scale of each
   // element depending on the provided flycam.
   constructor() {
-    this.current = 0;
     this.isPlaneVisible = {
       [OrthoViews.PLANE_XY]: true,
       [OrthoViews.PLANE_YZ]: true,
@@ -89,6 +110,7 @@ class SceneController {
     };
     this.planeShift = [0, 0, 0];
     this.segmentMeshController = new SegmentMeshController();
+    this.storePropertyUnsubscribers = [];
   }
 
   initialize() {
@@ -96,25 +118,24 @@ class SceneController {
     this.createMeshes();
     this.bindToEvents();
     this.scene = new THREE.Scene();
+    this.highlightedBBoxId = null;
+    this.rootGroup = new THREE.Group();
+    this.scene.add(
+      this.rootGroup.add(
+        this.rootNode,
+        this.segmentMeshController.meshesLayerLODRootGroup,
+        this.segmentMeshController.lightsGroup,
+      ),
+    );
     // Because the voxel coordinates do not have a cube shape but are distorted,
     // we need to distort the entire scene to provide an illustration that is
     // proportional to the actual size in nm.
     // For some reason, all objects have to be put into a group object. Changing
     // scene.scale does not have an effect.
-    this.rootGroup = new THREE.Object3D();
-    this.rootGroup.add(this.getRootNode());
-
-    this.meshesRootGroup = new THREE.Group();
-    this.highlightedBBoxId = null;
-    // The dimension(s) with the highest resolution will not be distorted
+    // The dimension(s) with the highest mag will not be distorted.
     this.rootGroup.scale.copy(
       new THREE.Vector3(...Store.getState().dataset.dataSource.scale.factor),
     );
-    // Add scene to the group, all Geometries are then added to group
-    this.scene.add(this.rootGroup);
-    this.scene.add(this.segmentMeshController.meshesLODRootGroup);
-    this.scene.add(this.meshesRootGroup);
-    this.rootGroup.add(new THREE.DirectionalLight());
     this.setupDebuggingMethods();
   }
 
@@ -125,13 +146,13 @@ class SceneController {
     window.addBucketMesh = (
       position: Vector3,
       zoomStep: number,
-      resolution: Vector3,
+      mag: Vector3,
       optColor?: string,
     ) => {
       const bucketSize = [
-        constants.BUCKET_WIDTH * resolution[0],
-        constants.BUCKET_WIDTH * resolution[1],
-        constants.BUCKET_WIDTH * resolution[2],
+        constants.BUCKET_WIDTH * mag[0],
+        constants.BUCKET_WIDTH * mag[1],
+        constants.BUCKET_WIDTH * mag[2],
       ];
       const boxGeometry = new THREE.BoxGeometry(...bucketSize);
       const edgesGeometry = new THREE.EdgesGeometry(boxGeometry);
@@ -197,14 +218,10 @@ class SceneController {
   }
 
   createMeshes(): void {
-    this.rootNode = new THREE.Object3D();
+    this.userBoundingBoxes = [];
     this.userBoundingBoxGroup = new THREE.Group();
     this.layerBoundingBoxGroup = new THREE.Group();
-    this.rootNode.add(this.userBoundingBoxGroup);
-    this.rootNode.add(this.layerBoundingBoxGroup);
     this.annotationToolsGeometryGroup = new THREE.Group();
-    this.rootNode.add(this.annotationToolsGeometryGroup);
-    this.userBoundingBoxes = [];
     const state = Store.getState();
     // Cubes
     const { min, max } = getDatasetBoundingBox(state.dataset);
@@ -215,28 +232,11 @@ class SceneController {
       showCrossSections: true,
       isHighlighted: false,
     });
-    this.datasetBoundingBox.getMeshes().forEach((mesh) => this.rootNode.add(mesh));
-    const taskBoundingBox = getSomeTracing(state.tracing).boundingBox;
-    this.buildTaskingBoundingBox(taskBoundingBox);
 
     this.contour = new ContourGeometry();
-    this.contour.getMeshes().forEach((mesh) => this.annotationToolsGeometryGroup.add(mesh));
-
     this.quickSelectGeometry = new QuickSelectGeometry();
-    this.annotationToolsGeometryGroup.add(this.quickSelectGeometry.getMeshGroup());
-
     this.lineMeasurementGeometry = new LineMeasurementGeometry();
-    this.lineMeasurementGeometry
-      .getMeshes()
-      .forEach((mesh) => this.annotationToolsGeometryGroup.add(mesh));
     this.areaMeasurementGeometry = new ContourGeometry(true);
-    this.areaMeasurementGeometry
-      .getMeshes()
-      .forEach((mesh) => this.annotationToolsGeometryGroup.add(mesh));
-
-    if (state.tracing.skeleton != null) {
-      this.addSkeleton((_state) => getSkeletonTracing(_state.tracing), true);
-    }
 
     this.planes = {
       [OrthoViews.PLANE_XY]: new Plane(OrthoViews.PLANE_XY),
@@ -247,12 +247,65 @@ class SceneController {
     this.planes[OrthoViews.PLANE_YZ].setRotation(new THREE.Euler(Math.PI, (1 / 2) * Math.PI, 0));
     this.planes[OrthoViews.PLANE_XZ].setRotation(new THREE.Euler((-1 / 2) * Math.PI, 0, 0));
 
-    for (const plane of _.values(this.planes)) {
-      plane.getMeshes().forEach((mesh: THREE.Object3D) => this.rootNode.add(mesh));
-    }
+    const planeMeshes = _.values(this.planes).flatMap((plane) => plane.getMeshes());
+    this.rootNode = new THREE.Group().add(
+      this.userBoundingBoxGroup,
+      this.layerBoundingBoxGroup,
+      this.annotationToolsGeometryGroup.add(
+        ...this.contour.getMeshes(),
+        this.quickSelectGeometry.getMeshGroup(),
+        ...this.lineMeasurementGeometry.getMeshes(),
+        ...this.areaMeasurementGeometry.getMeshes(),
+      ),
+      ...this.datasetBoundingBox.getMeshes(),
+      ...planeMeshes,
+    );
 
+    const taskBoundingBox = getSomeTracing(state.annotation).boundingBox;
+    this.buildTaskingBoundingBox(taskBoundingBox);
+    if (state.annotation.skeleton != null) {
+      this.addSkeleton((_state) => getSkeletonTracing(_state.annotation), true);
+    }
     // Hide all objects at first, they will be made visible later if needed
     this.stopPlaneMode();
+  }
+
+  addSplitBoundaryMesh(points: Vector3[]) {
+    if (points.length === 0) {
+      return () => {};
+    }
+
+    let splitBoundaryMesh: THREE.Mesh | null = null;
+    let splines: THREE.Object3D[] = [];
+    try {
+      const objects = computeSplitBoundaryMeshWithSplines(points);
+      splitBoundaryMesh = objects.splitBoundaryMesh;
+      splines = objects.splines;
+    } catch (exc) {
+      console.error(exc);
+      Toast.error("Could not compute surface");
+      return () => {};
+    }
+
+    const surfaceGroup = new THREE.Group();
+    if (splitBoundaryMesh != null) {
+      surfaceGroup.add(splitBoundaryMesh);
+    }
+    for (const spline of splines) {
+      surfaceGroup.add(spline);
+    }
+
+    this.rootGroup.add(surfaceGroup);
+    this.splitBoundaryMesh = splitBoundaryMesh;
+
+    return () => {
+      this.rootGroup.remove(surfaceGroup);
+      this.splitBoundaryMesh = null;
+    };
+  }
+
+  getSplitBoundaryMesh() {
+    return this.splitBoundaryMesh;
   }
 
   addSkeleton(
@@ -319,7 +372,10 @@ class SceneController {
 
     this.taskBoundingBox?.updateForCam(id);
 
-    this.segmentMeshController.meshesLODRootGroup.visible = id === OrthoViews.TDView;
+    this.segmentMeshController.meshesLayerLODRootGroup.visible = id === OrthoViews.TDView;
+    if (this.splitBoundaryMesh != null) {
+      this.splitBoundaryMesh.visible = id === OrthoViews.TDView;
+    }
     this.annotationToolsGeometryGroup.visible = id !== OrthoViews.TDView;
     this.lineMeasurementGeometry.updateForCam(id);
 
@@ -437,6 +493,61 @@ class SceneController {
     this.rootNode.add(this.userBoundingBoxGroup);
   }
 
+  private applyTransformToGroup(transform: Transform, group: THREE.Group | CustomLOD) {
+    if (transform.affineMatrix) {
+      const matrix = new THREE.Matrix4();
+      // @ts-ignore
+      matrix.set(...transform.affineMatrix);
+      // We need to disable matrixAutoUpdate as otherwise the update to the matrix will be lost.
+      group.matrixAutoUpdate = false;
+      group.matrix = matrix;
+    }
+  }
+
+  updateUserBoundingBoxesAndMeshesAccordingToTransforms(): void {
+    const state = Store.getState();
+    const tracingStoringUserBBoxes = getSomeTracing(state.annotation);
+    const transformForBBoxes =
+      tracingStoringUserBBoxes.type === "volume"
+        ? getTransformsForLayer(
+            state.dataset,
+            getLayerByName(state.dataset, tracingStoringUserBBoxes.tracingId),
+            state.datasetConfiguration.nativelyRenderedLayerName,
+          )
+        : getTransformsForSkeletonLayer(
+            state.dataset,
+            state.datasetConfiguration.nativelyRenderedLayerName,
+          );
+    this.applyTransformToGroup(transformForBBoxes, this.userBoundingBoxGroup);
+    const visibleSegmentationLayers = getVisibleSegmentationLayers(state);
+    if (visibleSegmentationLayers.length === 0) {
+      return;
+    }
+    // Use transforms of active segmentation layer to transform the meshes.
+    // All meshes not belonging to this layer should be hidden via updateMeshesAccordingToLayerVisibility anyway.
+    const transformForMeshes = getTransformsForLayer(
+      state.dataset,
+      visibleSegmentationLayers[0],
+      state.datasetConfiguration.nativelyRenderedLayerName,
+    );
+    this.applyTransformToGroup(
+      transformForMeshes,
+      this.segmentMeshController.meshesLayerLODRootGroup,
+    );
+  }
+
+  updateMeshesAccordingToLayerVisibility(): void {
+    const state = Store.getState();
+    const visibleSegmentationLayers = getVisibleSegmentationLayers(state);
+    const allSegmentationLayers = getSegmentationLayers(state.dataset);
+    allSegmentationLayers.forEach((layer) => {
+      const layerName = layer.name;
+      const isLayerVisible =
+        visibleSegmentationLayers.find((layer) => layer.name === layerName) !== undefined;
+      this.segmentMeshController.setVisibilityOfMeshesOfLayer(layerName, isLayerVisible);
+    });
+  }
+
   updateLayerBoundingBoxes(): void {
     const state = Store.getState();
     const dataset = state.dataset;
@@ -516,8 +627,8 @@ class SceneController {
 
     this.taskBoundingBox?.setVisibility(false);
 
-    if (this.segmentMeshController.meshesLODRootGroup != null) {
-      this.segmentMeshController.meshesLODRootGroup.visible = false;
+    if (this.segmentMeshController.meshesLayerLODRootGroup != null) {
+      this.segmentMeshController.meshesLayerLODRootGroup.visible = false;
     }
   }
 
@@ -532,41 +643,86 @@ class SceneController {
     this.taskBoundingBox?.setVisibility(true);
   }
 
+  destroy() {
+    // @ts-ignore
+    window.addBucketMesh = undefined;
+    // @ts-ignore
+    window.addVoxelMesh = undefined;
+    // @ts-ignore
+    window.addLine = undefined;
+    // @ts-ignore
+    window.removeLines = undefined;
+    // @ts-ignore
+    window.removeBucketMesh = undefined;
+
+    for (const skeletonId of Object.keys(this.skeletons)) {
+      this.removeSkeleton(Number.parseInt(skeletonId, 10));
+    }
+
+    for (const fn of this.storePropertyUnsubscribers) {
+      fn();
+    }
+    this.storePropertyUnsubscribers = [];
+
+    destroyRenderer();
+    // @ts-ignore
+    this.renderer = null;
+
+    this.datasetBoundingBox.destroy();
+    this.userBoundingBoxes.forEach((cube) => cube.destroy());
+    Object.values(this.layerBoundingBoxes).forEach((cube) => cube.destroy());
+    this.taskBoundingBox?.destroy();
+
+    for (const plane of _.values(this.planes)) {
+      plane.destroy();
+    }
+
+    this.rootNode = new THREE.Group();
+  }
+
   bindToEvents(): void {
-    listenToStoreProperty(
-      (storeState) => storeState.userConfiguration.clippingDistance,
-      (clippingDistance) => this.setClippingDistance(clippingDistance),
-    );
-    listenToStoreProperty(
-      (storeState) => storeState.userConfiguration.displayCrosshair,
-      (displayCrosshair) => this.setDisplayCrosshair(displayCrosshair),
-    );
-    listenToStoreProperty(
-      (storeState) => storeState.datasetConfiguration.interpolation,
-      (interpolation) => this.setInterpolation(interpolation),
-    );
-    listenToStoreProperty(
-      (storeState) => getSomeTracing(storeState.tracing).userBoundingBoxes,
-      (bboxes) => this.setUserBoundingBoxes(bboxes),
-    );
-    listenToStoreProperty(
-      (storeState) => getDataLayers(storeState.dataset),
-      () => this.updateLayerBoundingBoxes(),
-    );
-    listenToStoreProperty(
-      (storeState) => storeState.datasetConfiguration.nativelyRenderedLayerName,
-      () => this.updateLayerBoundingBoxes(),
-    );
-    listenToStoreProperty(
-      (storeState) => getSomeTracing(storeState.tracing).boundingBox,
-      (bb) => this.buildTaskingBoundingBox(bb),
-    );
-    listenToStoreProperty(
-      (storeState) =>
-        storeState.tracing.skeleton ? storeState.tracing.skeleton.showSkeletons : false,
-      (showSkeletons) => this.setSkeletonGroupVisibility(showSkeletons),
-      true,
-    );
+    this.storePropertyUnsubscribers = [
+      listenToStoreProperty(
+        (storeState) => storeState.userConfiguration.clippingDistance,
+        (clippingDistance) => this.setClippingDistance(clippingDistance),
+      ),
+      listenToStoreProperty(
+        (storeState) => storeState.userConfiguration.displayCrosshair,
+        (displayCrosshair) => this.setDisplayCrosshair(displayCrosshair),
+      ),
+      listenToStoreProperty(
+        (storeState) => storeState.datasetConfiguration.interpolation,
+        (interpolation) => this.setInterpolation(interpolation),
+      ),
+      listenToStoreProperty(
+        (storeState) => getSomeTracing(storeState.annotation).userBoundingBoxes,
+        (bboxes) => this.setUserBoundingBoxes(bboxes),
+      ),
+      listenToStoreProperty(
+        (storeState) => getDataLayers(storeState.dataset),
+        () => this.updateLayerBoundingBoxes(),
+      ),
+      listenToStoreProperty(
+        (storeState) => storeState.datasetConfiguration.nativelyRenderedLayerName,
+        () => {
+          this.updateLayerBoundingBoxes();
+          this.updateUserBoundingBoxesAndMeshesAccordingToTransforms();
+        },
+      ),
+      listenToStoreProperty(getVisibleSegmentationLayerNames, () =>
+        this.updateMeshesAccordingToLayerVisibility(),
+      ),
+      listenToStoreProperty(
+        (storeState) => getSomeTracing(storeState.annotation).boundingBox,
+        (bb) => this.buildTaskingBoundingBox(bb),
+      ),
+      listenToStoreProperty(
+        (storeState) =>
+          storeState.annotation.skeleton ? storeState.annotation.skeleton.showSkeletons : false,
+        (showSkeletons) => this.setSkeletonGroupVisibility(showSkeletons),
+        true,
+      ),
+    ];
   }
 }
 

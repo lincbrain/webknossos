@@ -1,27 +1,28 @@
 import Maybe from "data.maybe";
+import * as Utils from "libs/utils";
+import type { BoundingBoxType } from "oxalis/constants";
+import type { AnnotationTool } from "oxalis/model/accessors/tool_accessor";
+import { Toolkits } from "oxalis/model/accessors/tool_accessor";
+import {
+  isVolumeAnnotationDisallowedForZoom,
+  isVolumeTool,
+} from "oxalis/model/accessors/volumetracing_accessor";
 import { updateKey } from "oxalis/model/helpers/deep_update";
-import type {
-  AdditionalAxis,
-  APIAnnotation,
-  ServerAdditionalAxis,
-  ServerBoundingBox,
-  UserBoundingBoxFromServer,
-} from "types/api_flow_types";
 import type {
   Annotation,
   BoundingBoxObject,
+  OxalisState,
   UserBoundingBox,
   UserBoundingBoxToServer,
-  OxalisState,
 } from "oxalis/store";
-import { AnnotationToolEnum } from "oxalis/constants";
-import type { BoundingBoxType, AnnotationTool } from "oxalis/constants";
-import * as Utils from "libs/utils";
-import { getDisabledInfoForTools } from "oxalis/model/accessors/tool_accessor";
-import {
-  isVolumeTool,
-  isVolumeAnnotationDisallowedForZoom,
-} from "oxalis/model/accessors/volumetracing_accessor";
+import type {
+  APIAnnotation,
+  AdditionalAxis,
+  ServerAdditionalAxis,
+  ServerBoundingBox,
+  UserBoundingBoxFromServer,
+} from "types/api_types";
+import { getDisabledInfoForTools } from "../accessors/disabled_tool_accessor";
 
 export function convertServerBoundingBoxToBoundingBox(
   boundingBox: ServerBoundingBox,
@@ -84,7 +85,11 @@ export function convertPointToVecInBoundingBox(boundingBox: ServerBoundingBox): 
     topLeft: Utils.point3ToVector3(boundingBox.topLeft),
   };
 }
-export function convertServerAnnotationToFrontendAnnotation(annotation: APIAnnotation): Annotation {
+export function convertServerAnnotationToFrontendAnnotation(
+  annotation: APIAnnotation,
+  version: number,
+  earliestAccessibleVersion: number,
+): Annotation {
   const {
     id: annotationId,
     visibility,
@@ -93,21 +98,31 @@ export function convertServerAnnotationToFrontendAnnotation(annotation: APIAnnot
     name,
     typ: annotationType,
     tracingStore,
+    stats,
     owner,
     contributors,
+    organization,
     othersMayEdit,
     isLockedByOwner,
     annotationLayers,
   } = annotation;
-  const restrictions = { ...annotation.restrictions, ...annotation.settings };
+  const restrictions = {
+    ...annotation.restrictions,
+    ...annotation.settings,
+    initialAllowUpdate: annotation.restrictions.allowUpdate,
+  };
   return {
     annotationId,
     restrictions,
     visibility,
     tags,
+    version,
+    earliestAccessibleVersion,
+    stats,
     description,
     name,
     annotationType,
+    organization,
     isLockedByOwner,
     tracingStore,
     owner,
@@ -129,7 +144,7 @@ export function convertServerAdditionalAxesToFrontEnd(
 
 export function getNextTool(state: OxalisState): AnnotationTool | null {
   const disabledToolInfo = getDisabledInfoForTools(state);
-  const tools = Object.keys(AnnotationToolEnum) as AnnotationTool[];
+  const tools = Toolkits[state.userConfiguration.activeToolkit];
   const currentToolIndex = tools.indexOf(state.uiInformation.activeTool);
 
   // Search for the next tool which is not disabled.
@@ -140,7 +155,7 @@ export function getNextTool(state: OxalisState): AnnotationTool | null {
   ) {
     const newTool = tools[newToolIndex % tools.length];
 
-    if (!disabledToolInfo[newTool].isDisabled) {
+    if (!disabledToolInfo[newTool.id].isDisabled) {
       return newTool;
     }
   }
@@ -149,7 +164,7 @@ export function getNextTool(state: OxalisState): AnnotationTool | null {
 }
 export function getPreviousTool(state: OxalisState): AnnotationTool | null {
   const disabledToolInfo = getDisabledInfoForTools(state);
-  const tools = Object.keys(AnnotationToolEnum) as AnnotationTool[];
+  const tools = Toolkits[state.userConfiguration.activeToolkit];
   const currentToolIndex = tools.indexOf(state.uiInformation.activeTool);
 
   // Search backwards for the next tool which is not disabled.
@@ -160,7 +175,7 @@ export function getPreviousTool(state: OxalisState): AnnotationTool | null {
   ) {
     const newTool = tools[(tools.length + newToolIndex) % tools.length];
 
-    if (!disabledToolInfo[newTool].isDisabled) {
+    if (!disabledToolInfo[newTool.id].isDisabled) {
       return newTool;
     }
   }

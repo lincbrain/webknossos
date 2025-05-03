@@ -24,6 +24,7 @@ RUNNING_PID
 .bloop
 .metals
 metals.sbt
+__pycache__/
 
 
 # Webknossos
@@ -78,7 +79,6 @@ lifttemplate.iws
 conf/github.conf
 tmp/
 errorShots/
-flow-coverage/
 
 
 # Sublime
@@ -89,6 +89,15 @@ flow-coverage/
 .nyc_output
 coverage
 coverage-ts
+*.vscode
+.bsp
+temp-webknossos-schema**
+conf/application.conf-e
+.env
+.bloop
+.metals
+metals.sbt
+
 **/screenshots/*.diff.png
 **/screenshots/*.new.png
 
@@ -100,6 +109,4 @@ coverage-ts
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
-tools/proxy/.yarn/*
-
-task-definition.json
+tools/**/.yarn/*

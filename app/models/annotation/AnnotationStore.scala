@@ -1,12 +1,13 @@
 package models.annotation
 
 import com.scalableminds.util.accesscontext.DBAccessContext
+import com.scalableminds.util.objectid.ObjectId
 import com.scalableminds.util.tools.Fox
 import com.scalableminds.webknossos.datastore.storage.TemporaryStore
 import com.typesafe.scalalogging.LazyLogging
 import models.annotation.handler.AnnotationInformationHandlerSelector
 import models.user.User
-import net.liftweb.common.{Box, Empty, Failure, Full}
+import net.liftweb.common.{Box, Empty, Full}
 
 import javax.inject.Inject
 import scala.concurrent.ExecutionContext
@@ -19,15 +20,8 @@ class AnnotationStore @Inject()(
 
   private val cacheTimeout = 60 minutes
 
-  case class StoredResult(result: Fox[Annotation], timestamp: Long = System.currentTimeMillis)
-
   def requestAnnotation(id: AnnotationIdentifier, user: Option[User])(implicit ctx: DBAccessContext): Fox[Annotation] =
-    requestFromCache(id).getOrElse(requestFromHandler(id, user)).futureBox.recover {
-      case e =>
-        logger.error("AnnotationStore ERROR: " + e)
-        e.printStackTrace()
-        Failure("AnnotationStore ERROR: " + e)
-    }
+    requestFromCache(id).getOrElse(requestFromHandler(id, user))
 
   private def requestFromCache(id: AnnotationIdentifier): Option[Fox[Annotation]] = {
     val handler = annotationInformationHandlerSelector.informationHandlers(id.annotationType)
@@ -54,10 +48,13 @@ class AnnotationStore @Inject()(
     temporaryAnnotationStore.insert(id.toUniqueString, annotation, Some(cacheTimeout))
 
   private def getFromCache(annotationId: AnnotationIdentifier): Option[Fox[Annotation]] =
-    temporaryAnnotationStore.find(annotationId.toUniqueString).map(Fox.successful(_))
+    temporaryAnnotationStore.get(annotationId.toUniqueString).map(Fox.successful(_))
+
+  def findInCache(annotationId: ObjectId): Box[Annotation] =
+    temporaryAnnotationStore.getAll.find(a => a._id == annotationId)
 
   def findCachedByTracingId(tracingId: String): Box[Annotation] = {
-    val annotationOpt = temporaryAnnotationStore.findAll.find(a => a.annotationLayers.exists(_.tracingId == tracingId))
+    val annotationOpt = temporaryAnnotationStore.getAll.find(a => a.annotationLayers.exists(_.tracingId == tracingId))
     annotationOpt match {
       case Some(annotation) => Full(annotation)
       case None             => Empty

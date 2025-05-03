@@ -1,23 +1,11 @@
-import * as THREE from "three";
+import { V3 } from "libs/mjs";
+import { values } from "libs/utils";
+import _ from "lodash";
 import type { OrthoView, OrthoViewMap, Point2, Vector3, Viewport } from "oxalis/constants";
 import { OrthoViews } from "oxalis/constants";
-import { V3 } from "libs/mjs";
-import _ from "lodash";
-import { values } from "libs/utils";
-import {
-  enforceSkeletonTracing,
-  getSkeletonTracing,
-  getActiveNode,
-  getNodeAndTree,
-  getNodeAndTreeOrNull,
-  getNodePosition,
-  untransformNodePosition,
-} from "oxalis/model/accessors/skeletontracing_accessor";
-import {
-  getInputCatcherRect,
-  calculateGlobalPos,
-  calculateMaybeGlobalPos,
-} from "oxalis/model/accessors/view_mode_accessor";
+import { getClosestHoveredBoundingBox } from "oxalis/controller/combinations/bounding_box_handlers";
+import getSceneController from "oxalis/controller/scene_controller_provider";
+import { getEnabledColorLayers } from "oxalis/model/accessors/dataset_accessor";
 import {
   getActiveMagIndicesForLayers,
   getPosition,
@@ -25,29 +13,41 @@ import {
   isMagRestrictionViolated,
 } from "oxalis/model/accessors/flycam_accessor";
 import {
-  setActiveNodeAction,
-  deleteEdgeAction,
-  createTreeAction,
-  createNodeAction,
+  enforceSkeletonTracing,
+  getActiveNode,
+  getNodeAndTree,
+  getNodeAndTreeOrNull,
+  getNodePosition,
+  getSkeletonTracing,
+  untransformNodePosition,
+} from "oxalis/model/accessors/skeletontracing_accessor";
+import {
+  calculateGlobalPos,
+  calculateMaybeGlobalPos,
+  getInputCatcherRect,
+} from "oxalis/model/accessors/view_mode_accessor";
+import { setDirectionAction } from "oxalis/model/actions/flycam_actions";
+import {
   createBranchPointAction,
+  createNodeAction,
+  createTreeAction,
+  deleteEdgeAction,
   mergeTreesAction,
+  setActiveNodeAction,
   setNodePositionAction,
   updateNavigationListAction,
 } from "oxalis/model/actions/skeletontracing_actions";
-import { setDirectionAction } from "oxalis/model/actions/flycam_actions";
-import type PlaneView from "oxalis/view/plane_view";
-import Store from "oxalis/store";
-import type { Edge, Tree, Node } from "oxalis/store";
-import { api } from "oxalis/singletons";
-import getSceneController from "oxalis/controller/scene_controller_provider";
-import { renderToTexture } from "oxalis/view/rendering_utils";
-import { getBaseVoxelFactorsInUnit } from "oxalis/model/scaleinfo";
-import Dimensions from "oxalis/model/dimensions";
-import { getClosestHoveredBoundingBox } from "oxalis/controller/combinations/bounding_box_handlers";
-import { getEnabledColorLayers } from "oxalis/model/accessors/dataset_accessor";
-import type ArbitraryView from "oxalis/view/arbitrary_view";
 import { showContextMenuAction } from "oxalis/model/actions/ui_actions";
-import type { AdditionalCoordinate } from "types/api_flow_types";
+import Dimensions from "oxalis/model/dimensions";
+import { getBaseVoxelFactorsInUnit } from "oxalis/model/scaleinfo";
+import { api } from "oxalis/singletons";
+import Store from "oxalis/store";
+import type { Edge, Node, Tree } from "oxalis/store";
+import type ArbitraryView from "oxalis/view/arbitrary_view";
+import type PlaneView from "oxalis/view/plane_view";
+import { renderToTexture } from "oxalis/view/rendering_utils";
+import * as THREE from "three";
+import type { AdditionalCoordinate } from "types/api_types";
 const OrthoViewToNumber: OrthoViewMap<number> = {
   [OrthoViews.PLANE_XY]: 0,
   [OrthoViews.PLANE_YZ]: 1,
@@ -61,7 +61,7 @@ export function handleMergeTrees(
   isTouch: boolean,
 ) {
   const nodeId = maybeGetNodeIdFromPosition(view, position, plane, isTouch);
-  const skeletonTracing = enforceSkeletonTracing(Store.getState().tracing);
+  const skeletonTracing = enforceSkeletonTracing(Store.getState().annotation);
 
   // otherwise we have hit the background and do nothing
   if (nodeId != null && nodeId > 0) {
@@ -78,7 +78,7 @@ export function handleDeleteEdge(
   isTouch: boolean,
 ) {
   const nodeId = maybeGetNodeIdFromPosition(view, position, plane, isTouch);
-  const skeletonTracing = enforceSkeletonTracing(Store.getState().tracing);
+  const skeletonTracing = enforceSkeletonTracing(Store.getState().annotation);
 
   // otherwise we have hit the background and do nothing
   if (nodeId != null && nodeId > 0) {
@@ -181,7 +181,7 @@ export function moveNode(
   useFloat: boolean = false,
 ) {
   // dx and dy are measured in pixel.
-  getSkeletonTracing(Store.getState().tracing).map((skeletonTracing) =>
+  getSkeletonTracing(Store.getState().annotation).map((skeletonTracing) =>
     getNodeAndTree(skeletonTracing, nodeId).map(([activeTree, activeNode]) => {
       const state = Store.getState();
       const { activeViewport } = state.viewModeData.plane;
@@ -223,7 +223,7 @@ export function moveNode(
 }
 
 export function finishNodeMovement(nodeId: number) {
-  getSkeletonTracing(Store.getState().tracing).map((skeletonTracing) =>
+  getSkeletonTracing(Store.getState().annotation).map((skeletonTracing) =>
     getNodeAndTree(skeletonTracing, nodeId).map(([activeTree, node]) => {
       Store.dispatch(
         setNodePositionAction(
@@ -244,7 +244,7 @@ export function handleCreateNodeFromGlobalPosition(
   const state = Store.getState();
   // Create a new tree automatically if the corresponding setting is true and allowed
   const createNewTree =
-    state.tracing.restrictions.somaClickingAllowed && state.userConfiguration.newNodeNewTree;
+    state.annotation.restrictions.somaClickingAllowed && state.userConfiguration.newNodeNewTree;
   if (createNewTree) {
     Store.dispatch(createTreeAction());
   }
@@ -274,7 +274,7 @@ export function getOptionsForCreateSkeletonNode(
 ) {
   const state = Store.getState();
   const additionalCoordinates = state.flycam.additionalCoordinates;
-  const skeletonTracing = enforceSkeletonTracing(state.tracing);
+  const skeletonTracing = enforceSkeletonTracing(state.annotation);
   const activeNode = getActiveNode(skeletonTracing);
   const rotation = getRotationOrtho(activeViewport || state.viewModeData.plane.activeViewport);
 
@@ -342,7 +342,7 @@ export function createSkeletonNode(
   state = Store.getState();
 
   if (center) {
-    const newSkeleton = enforceSkeletonTracing(state.tracing);
+    const newSkeleton = enforceSkeletonTracing(state.annotation);
     // Note that the new node isn't necessarily active
     const newNodeId = newSkeleton.cachedMaxNodeId;
 
@@ -361,7 +361,7 @@ export function createSkeletonNode(
 }
 
 function updateTraceDirection(position: Vector3) {
-  const skeletonTracing = enforceSkeletonTracing(Store.getState().tracing);
+  const skeletonTracing = enforceSkeletonTracing(Store.getState().annotation);
   const activeNode = getActiveNode(skeletonTracing);
   if (activeNode != null) {
     const activeNodePosition = getNodePosition(activeNode, Store.getState());
@@ -457,7 +457,7 @@ function getPrecedingNodeFromTree(
 }
 
 export function toSubsequentNode(): void {
-  const tracing = enforceSkeletonTracing(Store.getState().tracing);
+  const tracing = enforceSkeletonTracing(Store.getState().annotation);
   const { navigationList, activeNodeId, activeTreeId } = tracing;
   if (activeNodeId == null) return;
   const isValidList =
@@ -491,7 +491,7 @@ export function toSubsequentNode(): void {
   }
 }
 export function toPrecedingNode(): void {
-  const tracing = enforceSkeletonTracing(Store.getState().tracing);
+  const tracing = enforceSkeletonTracing(Store.getState().annotation);
   const { navigationList, activeNodeId, activeTreeId } = tracing;
   if (activeNodeId == null) return;
   const isValidList =

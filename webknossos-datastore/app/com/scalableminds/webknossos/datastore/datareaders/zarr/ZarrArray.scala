@@ -1,7 +1,7 @@
 package com.scalableminds.webknossos.datastore.datareaders.zarr
 
-import com.scalableminds.util.tools.Fox.box2Fox
-import com.scalableminds.util.tools.{Fox, JsonHelper}
+import com.scalableminds.util.accesscontext.TokenContext
+import com.scalableminds.util.tools.{Fox, JsonHelper, FoxImplicits}
 import com.scalableminds.util.cache.AlfuCache
 import com.scalableminds.webknossos.datastore.datareaders.{AxisOrder, DatasetArray, DatasetHeader}
 import ucar.ma2.{Array => MultiArray}
@@ -13,18 +13,19 @@ import net.liftweb.common.Box.tryo
 
 import scala.concurrent.ExecutionContext
 
-object ZarrArray extends LazyLogging {
+object ZarrArray extends LazyLogging with FoxImplicits {
   def open(path: VaultPath,
            dataSourceId: DataSourceId,
            layerName: String,
            axisOrderOpt: Option[AxisOrder],
            channelIndex: Option[Int],
            additionalAxes: Option[Seq[AdditionalAxis]],
-           sharedChunkContentsCache: AlfuCache[String, MultiArray])(implicit ec: ExecutionContext): Fox[ZarrArray] =
+           sharedChunkContentsCache: AlfuCache[String, MultiArray])(implicit ec: ExecutionContext,
+                                                                    tc: TokenContext): Fox[ZarrArray] =
     for {
       headerBytes <- (path / ZarrHeader.FILENAME_DOT_ZARRAY)
         .readBytes() ?~> s"Could not read header at ${ZarrHeader.FILENAME_DOT_ZARRAY}"
-      header <- JsonHelper.parseAndValidateJson[ZarrHeader](headerBytes) ?~> "Could not parse array header"
+      header <- JsonHelper.parseAs[ZarrHeader](headerBytes).toFox ?~> "Could not parse array header"
       _ <- DatasetArray.assertChunkSizeLimit(header.bytesPerChunk)
       array <- tryo(
         new ZarrArray(
@@ -36,7 +37,7 @@ object ZarrArray extends LazyLogging {
           channelIndex,
           additionalAxes,
           sharedChunkContentsCache
-        )) ?~> "Could not open zarr2 array"
+        )).toFox ?~> "Could not open zarr2 array"
     } yield array
 
 }

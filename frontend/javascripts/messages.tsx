@@ -2,8 +2,8 @@ import _ from "lodash";
 import type { Vector4 } from "oxalis/constants";
 import type {
   DatasetConfiguration,
-  UserConfiguration,
   DatasetLayerConfiguration,
+  UserConfiguration,
 } from "oxalis/store";
 
 export type RecommendedConfiguration = Partial<
@@ -48,6 +48,7 @@ export const settings: Partial<Record<keyof RecommendedConfiguration, string>> =
   renderWatermark: "Logo in Screenshots",
   antialiasRendering: "Antialiasing",
   colorLayerOrder: "Color Layer Order",
+  selectiveSegmentVisibility: "Selective Visibility",
 };
 export const settingsTooltips: Partial<Record<keyof RecommendedConfiguration, string>> = {
   loadingStrategy: `You can choose between loading the best quality first
@@ -81,6 +82,7 @@ export const settingsTooltips: Partial<Record<keyof RecommendedConfiguration, st
   antialiasRendering: "Antialias rendering (can impact performance)",
   colorLayerOrder:
     "Set the order in which color layers are rendered. This setting is only relevant if the cover blend mode is active.",
+  selectiveSegmentVisibility: "When enabled, only the active and hovered segments are visible.",
 };
 export const layerViewConfigurations: Partial<Record<keyof DatasetLayerConfiguration, string>> = {
   color: "Color",
@@ -130,8 +132,9 @@ A reload is necessary to return to a valid state.`,
     "There is no action that could be undone. However, if you want to restore an earlier version of this annotation, use the 'Restore Older Version' functionality in the dropdown next to the 'Save' button.",
   "undo.no_redo": "There is no action that could be redone.",
   "undo.no_undo_during_proofread":
-    "Undo is not supported during proofreading yet. Please manually revert the last action you took.",
-  "undo.no_redo_during_proofread": "Redo is not supported during proofreading yet.",
+    "Undo is not supported during proofreading yet. Please use the 'Restore Older Version' functionality in the dropdown next to the 'Save' button.",
+  "undo.no_redo_during_proofread":
+    "Redo is not supported during proofreading yet. Please use the 'Restore Older Version' functionality in the dropdown next to the 'Save' button.",
   "undo.import_volume_tracing":
     "Importing a volume annotation cannot be undone. However, if you want to restore an earlier version of this annotation, use the 'Restore Older Version' functionality in the dropdown next to the 'Save' button.",
   "download.wait": "Please wait...",
@@ -176,9 +179,12 @@ instead. Only enable this option if you understand its effect. All layers will n
     </span>
   ),
   "tracing.copy_cell_id": "Hit CTRL + I to copy the currently hovered segment id",
-  "tracing.segment_id_out_of_bounds": _.template(
-    "Cannot create a segment id larger than the segment layers maximum value of <%- maxSegmentId %>.",
-  ),
+  "tracing.segment_id_out_of_bounds": (
+    requestedId: number,
+    validRange: readonly [number, number],
+  ) =>
+    `Cannot create a segment with id=${requestedId} because it is not between ${validRange[0]} and ${validRange[1]}.`,
+
   "tracing.copy_maybe_mapped_cell_id":
     "Hit CTRL + I to copy the currently hovered segment id. Press CTRL + ALT + I if you want to copy the mapped id.",
   "tracing.no_more_branchpoints": "No more branchpoints",
@@ -187,8 +193,6 @@ instead. Only enable this option if you understand its effect. All layers will n
     "You didn't add a node after jumping to this branchpoint, do you really want to jump again?",
   "tracing.edit_volume_in_merger_mode":
     "The volume annotation would be changed by this action. This is not allowed while merger mode is active.",
-  "tracing.volume_resolution_mismatch":
-    "The volume annotation magnifications do not match the dataset magnifications. Was the dataset edited after creating the annotation? Consider downloading and re-uploading magnification 1 only to adapt the annotation.",
   "tracing.segmentation_zoom_warning":
     "Segmentation data and volume annotation is only fully supported at a smaller zoom level.",
   "tracing.uint64_segmentation_warning":
@@ -214,6 +218,8 @@ instead. Only enable this option if you understand its effect. All layers will n
     } "${disallowedCharacters}". Please remove ${
       disallowedCharacters.length > 1 ? "them" : "it"
     } to set the layer name.`,
+  "tracing.volume_layer_name_too_short": "The layer name must be at least one character long.",
+  "tracing.volume_layer_name_starts_with_dot": "The layer name must not start with a dot.",
   "tracing.delete_initial_node": "Do you really want to delete the initial node?",
   "tracing.delete_tree": "Do you really want to delete the whole tree?",
   "tracing.delete_tree_with_initial_node":
@@ -318,7 +324,6 @@ instead. Only enable this option if you understand its effect. All layers will n
     "Resets this task instance to its initial state, undoing any annotation work of the assigned user. The task will remain assigned to this user for further annotation work.",
   "task.tooltip_explain_reset_cancel":
     "Resets this task instance to its initial state, undoing any annotation work of the assigned user. Furthermore, the task assignment will be removed from the user’s account and recycled into the pool of available tasks for other users. The currently assigned user will not be assigned to this task again (unless they are an Admin).",
-  "dataset.upload_success": "The dataset was uploaded successfully.",
   "dataset.upload_failed": "The dataset upload failed.",
   "dataset.upload_cancel": "The dataset upload was cancelled.",
   "dataset.unsupported_file_type":
@@ -357,20 +362,20 @@ instead. Only enable this option if you understand its effect. All layers will n
   "dataset.import.required.url": "Please provide a URL to a dataset.",
   "dataset.import.required.folder": "Please define a target folder for this dataset.",
   "dataset.import.invalid_fields": "Please check that all form fields are valid.",
+  "dataset.settings.updated_datasource_id_warning":
+    "The datasource ID of a dataset must no be changed. The changes to the datasource ID will be ignored.",
   "dataset.unique_layer_names": "The layer names provided by the dataset are not unique.",
   "dataset.name_length": "Dataset name must be at least 3 characters",
   "dataset.unsupported_element_class": (layerName: string, elementClass: string) =>
     `The layer "${layerName}" was defined as ${elementClass}. This format is not officially supported. Please convert the layer to a supported format.`,
   "dataset.unsupported_segmentation_class_uint24":
     "The segmentation layer was defined as uint24. This format is not supported for segmentations. Please convert the layer to a supported format.",
-  "dataset.unsupported_segmentation_class_int64":
-    "The segmentation layer was defined as int64. This format is not supported for segmentations. Please convert the layer to the unsigned uint64 format.",
   "dataset.is_scratch":
     "This dataset location is marked as 'scratch' and meant for testing only. Please move this dataset to a permanent storage location and reimport it.",
-  "dataset.resolution_mismatch":
-    "This dataset contains multiple layers which differ in their magnification. Please convert the layers to make their resolutions match. Otherwise, rendering errors cannot be avoided.",
   "dataset.z1_downsampling_hint":
     "The currently rendered quality is not optimal due to the available magnifications and the viewport arrangement. To improve the quality try to increase the size of the XY viewport (e.g. by maximizing it).",
+  "dataset.mag_explanation":
+    "Layers contain image data in one or multiple magnifications. The image data in full resolution is referred to as the finest magnification, e.g. mag 1-1-1. Magnification 4-4-4 describes a downsampling factor of 4 in each dimension compared to mag 1-1-1.",
   "annotation.finish": "Are you sure you want to permanently finish this annotation?",
   "annotation.was_finished": "Annotation was archived",
   "annotation.no_fallback_data_included":
@@ -410,6 +415,8 @@ instead. Only enable this option if you understand its effect. All layers will n
   "auth.registration_org_input": "Please select an organization!",
   "auth.privacy_check_required":
     "Unfortunately, we cannot provide the service without your consent to the processing of your data.",
+  "auth.tos_check_required":
+    "Unfortunately, we cannot provide the service without your consent to our terms of service.",
   "auth.reset_logout": "You will be logged out, after successfully changing your password.",
   "auth.reset_old_password": "Please input your old password!",
   "auth.reset_new_password": "Please input your new password!",
@@ -470,7 +477,7 @@ instead. Only enable this option if you understand its effect. All layers will n
     "<%- userName %> is about to become a dataset manager and will be able to access and edit all datasets within this organization.",
   ),
   "users.set_admin": _.template(
-    "<%- userName %> is about to become an admin for this organization with full read/write access to all datasets and management capbilities for all users, projects, and tasks.",
+    "<%- userName %> is about to become an admin for this organization with full read/write access to all datasets and management capabilities for all users, projects, and tasks.",
   ),
   "users.change_email_title": "Do you really want to change the email?",
   "users.change_email": _.template(
@@ -489,6 +496,8 @@ instead. Only enable this option if you understand its effect. All layers will n
   "ui.no_form_active": "Could not set the initial form values as the form could not be loaded.",
   "organization.plan.upgrage_request_sent":
     "An email with your upgrade request has been sent to the WEBKNOSSOS sales team.",
+  "organization.credit_request_sent":
+    "An email with your credit request has been sent to the WEBKNOSSOS sales team.",
   "organization.plan.feature_not_available": (
     requiredPlan: string,
     organizationOwnerName: string,

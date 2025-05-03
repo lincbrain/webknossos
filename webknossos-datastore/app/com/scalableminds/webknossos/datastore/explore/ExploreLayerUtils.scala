@@ -50,8 +50,17 @@ trait ExploreLayerUtils extends FoxImplicits {
                                                    preferredVoxelSize: Option[VoxelSize],
                                                    voxelSize: VoxelSize): List[DataLayerWithMagLocators] =
     layers.map(l => {
-      val coordinateTransformations = coordinateTransformationForVoxelSize(voxelSize, preferredVoxelSize)
-      l.mapped(coordinateTransformations = coordinateTransformations)
+      val generatedCoordinateTransformation = coordinateTransformationForVoxelSize(voxelSize, preferredVoxelSize)
+      val existingCoordinateTransformations = l.coordinateTransformations
+      val combinedCoordinateTransformations = existingCoordinateTransformations match {
+        // See https://github.com/scalableminds/webknossos/pull/8311/files/bbdde25dc4c1955281a45e5be063a8d5d1d8194c#r1913128610 for discussion.
+        // We are not merging the coordinate transformations, but rather appending the generated ones to the existing ones.
+        // It is unclear what the correct behavior should be, since we do not have test datasets where this would be relevant.
+        case Some(coordinateTransformations) =>
+          Some(coordinateTransformations ++ generatedCoordinateTransformation.getOrElse(List()))
+        case None => generatedCoordinateTransformation
+      }
+      l.mapped(coordinateTransformations = combinedCoordinateTransformations)
     })
 
   private def isPowerOfTwo(x: Int): Boolean =
@@ -68,13 +77,13 @@ trait ExploreLayerUtils extends FoxImplicits {
 
     val mag = (voxelSize / minVoxelSize).round.toVec3Int
     for {
-      _ <- bool2Fox(isPowerOfTwo(mag.x) && isPowerOfTwo(mag.y) && isPowerOfTwo(mag.z)) ?~> s"invalid mag: $mag. Must all be powers of two"
+      _ <- Fox.fromBool(isPowerOfTwo(mag.x) && isPowerOfTwo(mag.y) && isPowerOfTwo(mag.z)) ?~> s"invalid mag: $mag. Must all be powers of two"
     } yield mag
   }
 
   private def checkForDuplicateMags(magGroup: List[Vec3Int])(implicit ec: ExecutionContext): Fox[Unit] =
     for {
-      _ <- bool2Fox(magGroup.length == 1) ?~> s"detected mags are not unique, found $magGroup"
+      _ <- Fox.fromBool(magGroup.length == 1) ?~> s"detected mags are not unique, found $magGroup"
     } yield ()
 
   private def findBaseVoxelSize(minVoxelSize: VoxelSize, preferredVoxelSizeOpt: Option[VoxelSize]): VoxelSize =
@@ -122,7 +131,7 @@ trait ExploreLayerUtils extends FoxImplicits {
     val minVoxelSizeOpt = Try(allVoxelSizes.minBy(_.toNanometer.toTuple)).toOption
 
     for {
-      minVoxelSize <- option2Fox(minVoxelSizeOpt)
+      minVoxelSize <- minVoxelSizeOpt.toFox
       baseVoxelSize = findBaseVoxelSize(minVoxelSize, preferredVoxelSize)
       allMags <- Fox.combined(allVoxelSizes.map(magFromVoxelSize(baseVoxelSize, _)).toList) ?~> s"voxel sizes for layers are not uniform, got ${layersWithVoxelSizes
         .map(_._2)}"
@@ -137,14 +146,15 @@ trait ExploreLayerUtils extends FoxImplicits {
   }
 
   def removeHeaderFileNamesFromUriSuffix(uri: String): String =
-    if (uri.endsWith(N5Header.FILENAME_ATTRIBUTES_JSON)) uri.dropRight(N5Header.FILENAME_ATTRIBUTES_JSON.length)
-    else if (uri.endsWith(ZarrHeader.FILENAME_DOT_ZARRAY)) uri.dropRight(ZarrHeader.FILENAME_DOT_ZARRAY.length)
-    else if (uri.endsWith(NgffMetadata.FILENAME_DOT_ZATTRS)) uri.dropRight(NgffMetadata.FILENAME_DOT_ZATTRS.length)
-    else if (uri.endsWith(NgffGroupHeader.FILENAME_DOT_ZGROUP))
-      uri.dropRight(NgffGroupHeader.FILENAME_DOT_ZGROUP.length)
-    else if (uri.endsWith(PrecomputedHeader.FILENAME_INFO)) uri.dropRight(PrecomputedHeader.FILENAME_INFO.length)
-    else if (uri.endsWith(Zarr3ArrayHeader.FILENAME_ZARR_JSON))
-      uri.dropRight(Zarr3ArrayHeader.FILENAME_ZARR_JSON.length)
-    else uri
+    uri
+      .stripSuffix(N5Header.FILENAME_ATTRIBUTES_JSON)
+      .stripSuffix(ZarrHeader.FILENAME_DOT_ZARRAY)
+      .stripSuffix(NgffMetadata.FILENAME_DOT_ZATTRS)
+      .stripSuffix(NgffGroupHeader.FILENAME_DOT_ZGROUP)
+      .stripSuffix(PrecomputedHeader.FILENAME_INFO)
+      .stripSuffix(Zarr3ArrayHeader.FILENAME_ZARR_JSON)
+
+  def removeNeuroglancerPrefixesFromUri(uri: String): String =
+    uri.stripPrefix("zarr3://").stripPrefix("zarr://").stripPrefix("precomputed://").stripPrefix("n5://")
 
 }

@@ -1,68 +1,73 @@
-import PriorityQueue from "js-priority-queue";
-// @ts-expect-error ts-migrate(7016) FIXME: Could not find a declaration file for module 'twee... Remove this comment to see the full error message
-import TWEEN from "tween.js";
-import _ from "lodash";
-import type { Bucket, DataBucket } from "oxalis/model/bucket_data_handling/bucket";
-import { getConstructorForElementClass } from "oxalis/model/bucket_data_handling/bucket";
-import { type APICompoundType, APICompoundTypeEnum, type ElementClass } from "types/api_flow_types";
-import { InputKeyboardNoLoop } from "libs/input";
-import { M4x4, type Matrix4x4, V3, type Vector16 } from "libs/mjs";
-import type { Versions } from "oxalis/view/version_view";
-import {
-  addTreesAndGroupsAction,
-  setActiveNodeAction,
-  createCommentAction,
-  deleteNodeAction,
-  centerActiveNodeAction,
-  deleteTreeAction,
-  resetSkeletonTracingAction,
-  setNodeRadiusAction,
-  setTreeNameAction,
-  setActiveTreeAction,
-  setActiveTreeGroupAction,
-  setActiveTreeByNameAction,
-  setTreeColorIndexAction,
-  setTreeVisibilityAction,
-  setTreeGroupAction,
-  setTreeGroupsAction,
-  setTreeEdgeVisibilityAction,
-  createTreeAction,
-} from "oxalis/model/actions/skeletontracing_actions";
-import {
-  bucketPositionToGlobalAddress,
-  globalPositionToBucketPosition,
-  scaleGlobalPositionWithResolution,
-  zoomedAddressToZoomedPosition,
-} from "oxalis/model/helpers/position_converter";
-import {
-  callDeep,
-  createGroupToSegmentsMap,
-  MISSING_GROUP_ID,
-  moveGroupsHelper,
-} from "oxalis/view/right-border-tabs/tree_hierarchy_view_helpers";
-import { centerTDViewAction } from "oxalis/model/actions/view_mode_actions";
-import { disableSavingAction, discardSaveQueuesAction } from "oxalis/model/actions/save_actions";
+import { requestTask } from "admin/api/tasks";
 import {
   doWithToken,
   finishAnnotation,
   getMappingsForDatasetLayer,
-  requestTask,
-  downsampleSegmentation,
   sendAnalyticsEvent,
-} from "admin/admin_rest_api";
+} from "admin/rest_api";
+import PriorityQueue from "js-priority-queue";
+import { InputKeyboardNoLoop } from "libs/input";
+import { M4x4, type Matrix4x4, V3, type Vector16 } from "libs/mjs";
+import Request from "libs/request";
+import type { ToastStyle } from "libs/toast";
+import Toast from "libs/toast";
+import UserLocalStorage from "libs/user_local_storage";
+import * as Utils from "libs/utils";
+import { coalesce } from "libs/utils";
+import window, { location } from "libs/window";
+import _ from "lodash";
+import messages from "messages";
+import type {
+  BoundingBoxType,
+  BucketAddress,
+  ControlMode,
+  OrthoView,
+  TypedArray,
+  Vector3,
+  Vector4,
+} from "oxalis/constants";
+import Constants, {
+  ControlModeEnum,
+  OrthoViews,
+  TDViewDisplayModeEnum,
+  MappingStatusEnum,
+  EMPTY_OBJECT,
+} from "oxalis/constants";
+import { rotate3DViewTo } from "oxalis/controller/camera_controller";
+import { loadAgglomerateSkeletonForSegmentId } from "oxalis/controller/combinations/segmentation_handlers";
+import {
+  createSkeletonNode,
+  getOptionsForCreateSkeletonNode,
+} from "oxalis/controller/combinations/skeleton_handlers";
+import UrlManager from "oxalis/controller/url_manager";
+import type { OxalisModel } from "oxalis/model";
+import {
+  getLayerBoundingBox,
+  getLayerByName,
+  getMagInfo,
+  getMappingInfo,
+  getVisibleSegmentationLayer,
+} from "oxalis/model/accessors/dataset_accessor";
+import { flatToNestedMatrix } from "oxalis/model/accessors/dataset_layer_transformation_accessor";
+import {
+  getActiveMagIndexForLayer,
+  getPosition,
+  getRotation,
+} from "oxalis/model/accessors/flycam_accessor";
 import {
   findTreeByNodeId,
-  getNodeAndTree,
-  getNodeAndTreeOrNull,
   getActiveNode,
   getActiveTree,
   getActiveTreeGroup,
-  getTree,
   getFlatTreeGroups,
+  getNodeAndTree,
+  getNodeAndTreeOrNull,
+  getNodePosition,
+  getTree,
   getTreeGroupsMap,
   mapGroups,
-  getNodePosition,
 } from "oxalis/model/accessors/skeletontracing_accessor";
+import { AnnotationTool, type AnnotationToolId } from "oxalis/model/accessors/tool_accessor";
 import {
   getActiveCellId,
   getActiveSegmentationTracing,
@@ -78,28 +83,50 @@ import {
   getVolumeTracings,
   hasVolumeTracings,
 } from "oxalis/model/accessors/volumetracing_accessor";
-import { getHalfViewportExtentsInUnitFromState } from "oxalis/model/sagas/saga_selectors";
+import { restartSagaAction, wkReadyAction } from "oxalis/model/actions/actions";
 import {
-  getLayerBoundingBox,
-  getLayerByName,
-  getResolutionInfo,
-  getVisibleSegmentationLayer,
-  getMappingInfo,
-  flatToNestedMatrix,
-} from "oxalis/model/accessors/dataset_accessor";
-import {
-  getPosition,
-  getActiveMagIndexForLayer,
-  getRotation,
-} from "oxalis/model/accessors/flycam_accessor";
+  dispatchMaybeFetchMeshFilesAsync,
+  refreshMeshesAction,
+  removeMeshAction,
+  updateCurrentMeshFileAction,
+  updateMeshVisibilityAction,
+} from "oxalis/model/actions/annotation_actions";
+import { setLayerTransformsAction } from "oxalis/model/actions/dataset_actions";
+import { setPositionAction, setRotationAction } from "oxalis/model/actions/flycam_actions";
+import { disableSavingAction, discardSaveQueuesAction } from "oxalis/model/actions/save_actions";
 import {
   loadAdHocMeshAction,
   loadPrecomputedMeshAction,
 } from "oxalis/model/actions/segmentation_actions";
-import { loadAgglomerateSkeletonForSegmentId } from "oxalis/controller/combinations/segmentation_handlers";
-import { overwriteAction } from "oxalis/model/helpers/overwrite_action_middleware";
-import { parseNml } from "oxalis/model/helpers/nml_helpers";
-import { rotate3DViewTo } from "oxalis/controller/camera_controller";
+import {
+  setMappingAction,
+  setMappingEnabledAction,
+  updateDatasetSettingAction,
+  updateLayerSettingAction,
+  updateUserSettingAction,
+} from "oxalis/model/actions/settings_actions";
+import {
+  addTreesAndGroupsAction,
+  centerActiveNodeAction,
+  createCommentAction,
+  createTreeAction,
+  deleteNodeAction,
+  deleteTreeAction,
+  resetSkeletonTracingAction,
+  setActiveNodeAction,
+  setActiveTreeAction,
+  setActiveTreeByNameAction,
+  setActiveTreeGroupAction,
+  setNodeRadiusAction,
+  setTreeColorIndexAction,
+  setTreeEdgeVisibilityAction,
+  setTreeGroupAction,
+  setTreeGroupsAction,
+  setTreeNameAction,
+  setTreeVisibilityAction,
+} from "oxalis/model/actions/skeletontracing_actions";
+import { setToolAction } from "oxalis/model/actions/ui_actions";
+import { centerTDViewAction } from "oxalis/model/actions/view_mode_actions";
 import {
   type BatchableUpdateSegmentAction,
   batchUpdateGroupsAndSegmentsAction,
@@ -109,79 +136,50 @@ import {
   setSegmentGroupsAction,
   updateSegmentAction,
 } from "oxalis/model/actions/volumetracing_actions";
-import { setPositionAction, setRotationAction } from "oxalis/model/actions/flycam_actions";
-import { setToolAction } from "oxalis/model/actions/ui_actions";
-import {
-  updateCurrentMeshFileAction,
-  refreshMeshesAction,
-  updateMeshVisibilityAction,
-  removeMeshAction,
-  dispatchMaybeFetchMeshFilesAsync,
-} from "oxalis/model/actions/annotation_actions";
-import {
-  updateUserSettingAction,
-  updateDatasetSettingAction,
-  updateLayerSettingAction,
-  setMappingAction,
-  setMappingEnabledAction,
-} from "oxalis/model/actions/settings_actions";
-import { wkReadyAction, restartSagaAction } from "oxalis/model/actions/actions";
-import type {
-  BoundingBoxType,
-  ControlMode,
-  OrthoView,
-  Vector3,
-  Vector4,
-  AnnotationTool,
-  TypedArray,
-  BucketAddress,
-} from "oxalis/constants";
-import Constants, {
-  ControlModeEnum,
-  OrthoViews,
-  AnnotationToolEnum,
-  TDViewDisplayModeEnum,
-  MappingStatusEnum,
-  EMPTY_OBJECT,
-} from "oxalis/constants";
+import BoundingBox from "oxalis/model/bucket_data_handling/bounding_box";
+import type { Bucket, DataBucket } from "oxalis/model/bucket_data_handling/bucket";
 import type DataLayer from "oxalis/model/data_layer";
-import type { OxalisModel } from "oxalis/model";
+import dimensions from "oxalis/model/dimensions";
+import { MagInfo } from "oxalis/model/helpers/mag_info";
+import { parseNml } from "oxalis/model/helpers/nml_helpers";
+import { overwriteAction } from "oxalis/model/helpers/overwrite_action_middleware";
+import {
+  bucketPositionToGlobalAddress,
+  globalPositionToBucketPosition,
+  scaleGlobalPositionWithMagnification,
+  zoomedAddressToZoomedPosition,
+} from "oxalis/model/helpers/position_converter";
+import { getConstructorForElementClass } from "oxalis/model/helpers/typed_buffer";
+import { getMaximumGroupId } from "oxalis/model/reducers/skeletontracing_reducer_helpers";
+import { getHalfViewportExtentsInUnitFromState } from "oxalis/model/sagas/saga_selectors";
 import { Model, api } from "oxalis/singletons";
-import Request from "libs/request";
 import type {
-  MappingType,
   DatasetConfiguration,
   Mapping,
+  MappingType,
+  MutableNode,
   Node,
+  OxalisState,
+  Segment,
+  SegmentGroup,
   SkeletonTracing,
-  Tracing,
+  StoreAnnotation,
   TreeGroupTypeFlat,
   TreeMap,
   UserConfiguration,
   VolumeTracing,
-  OxalisState,
-  SegmentGroup,
-  Segment,
-  MutableNode,
 } from "oxalis/store";
 import Store from "oxalis/store";
-import type { ToastStyle } from "libs/toast";
-import Toast from "libs/toast";
-import UrlManager from "oxalis/controller/url_manager";
-import UserLocalStorage from "libs/user_local_storage";
-import * as Utils from "libs/utils";
-import dimensions from "oxalis/model/dimensions";
-import messages from "messages";
-import window, { location } from "libs/window";
-import { coalesce } from "libs/utils";
-import { setLayerTransformsAction } from "oxalis/model/actions/dataset_actions";
-import { ResolutionInfo } from "oxalis/model/helpers/resolution_info";
-import type { AdditionalCoordinate } from "types/api_flow_types";
-import { getMaximumGroupId } from "oxalis/model/reducers/skeletontracing_reducer_helpers";
 import {
-  createSkeletonNode,
-  getOptionsForCreateSkeletonNode,
-} from "oxalis/controller/combinations/skeleton_handlers";
+  MISSING_GROUP_ID,
+  callDeep,
+  createGroupToSegmentsMap,
+  moveGroupsHelper,
+} from "oxalis/view/right-border-tabs/trees_tab/tree_hierarchy_view_helpers";
+// @ts-expect-error ts-migrate(7016) FIXME: Could not find a declaration file for module 'twee... Remove this comment to see the full error message
+import TWEEN from "tween.js";
+import { type APICompoundType, APICompoundTypeEnum, type ElementClass } from "types/api_types";
+import type { AdditionalCoordinate } from "types/api_types";
 
 type TransformSpec =
   | { type: "scale"; args: [Vector3, Vector3] }
@@ -194,15 +192,15 @@ export function assertExists<T>(value: any, message: string): asserts value is N
     throw new Error(message);
   }
 }
-export function assertSkeleton(tracing: Tracing): SkeletonTracing {
-  if (tracing.skeleton == null) {
+export function assertSkeleton(annotation: StoreAnnotation): SkeletonTracing {
+  if (annotation.skeleton == null) {
     throw new Error("This api function should only be called in a skeleton annotation.");
   }
 
-  return tracing.skeleton;
+  return annotation.skeleton;
 }
 export function assertVolume(state: OxalisState): VolumeTracing {
-  if (state.tracing.volumes.length === 0) {
+  if (state.annotation.volumes.length === 0) {
     throw new Error(
       "This api function should only be called when a volume annotation layer exists.",
     );
@@ -251,7 +249,7 @@ class TracingApi {
    * Returns the id of the current active node.
    */
   getActiveNodeId(): number | null | undefined {
-    const tracing = assertSkeleton(Store.getState().tracing);
+    const tracing = assertSkeleton(Store.getState().annotation);
     return getActiveNode(tracing)?.id ?? null;
   }
 
@@ -259,7 +257,7 @@ class TracingApi {
    * Returns the id of the current active tree.
    */
   getActiveTreeId(): number | null | undefined {
-    const tracing = assertSkeleton(Store.getState().tracing);
+    const tracing = assertSkeleton(Store.getState().annotation);
     return getActiveTree(tracing)?.treeId ?? null;
   }
 
@@ -267,7 +265,7 @@ class TracingApi {
    * Returns the id of the current active group.
    */
   getActiveTreeGroupId(): number | null | undefined {
-    const tracing = assertSkeleton(Store.getState().tracing);
+    const tracing = assertSkeleton(Store.getState().annotation);
     return getActiveTreeGroup(tracing)
       .map((group) => group.groupId)
       .getOrElse(null);
@@ -284,7 +282,7 @@ class TracingApi {
    * Sets the active node given a node id.
    */
   setActiveNode(id: number) {
-    assertSkeleton(Store.getState().tracing);
+    assertSkeleton(Store.getState().annotation);
     assertExists(id, "Node id is missing.");
     Store.dispatch(setActiveNodeAction(id));
   }
@@ -293,7 +291,7 @@ class TracingApi {
    * Returns all nodes belonging to a tracing.
    */
   getAllNodes(): Array<Node> {
-    const skeletonTracing = assertSkeleton(Store.getState().tracing);
+    const skeletonTracing = assertSkeleton(Store.getState().annotation);
     return _.flatMap(skeletonTracing.trees, (tree) => Array.from(tree.nodes.values()));
   }
 
@@ -301,7 +299,7 @@ class TracingApi {
    * Returns all trees belonging to a tracing.
    */
   getAllTrees(): TreeMap {
-    const skeletonTracing = assertSkeleton(Store.getState().tracing);
+    const skeletonTracing = assertSkeleton(Store.getState().annotation);
     return skeletonTracing.trees;
   }
 
@@ -309,7 +307,7 @@ class TracingApi {
    * Deletes the node with nodeId in the tree with treeId
    */
   deleteNode(nodeId: number, treeId: number) {
-    assertSkeleton(Store.getState().tracing);
+    assertSkeleton(Store.getState().annotation);
     Store.dispatch(deleteNodeAction(nodeId, treeId));
   }
 
@@ -317,7 +315,7 @@ class TracingApi {
    * Centers the active node.
    */
   centerActiveNode() {
-    assertSkeleton(Store.getState().tracing);
+    assertSkeleton(Store.getState().annotation);
     Store.dispatch(centerActiveNodeAction());
   }
 
@@ -326,7 +324,7 @@ class TracingApi {
    * id of that tree.
    */
   createTree() {
-    assertSkeleton(Store.getState().tracing);
+    assertSkeleton(Store.getState().annotation);
     let treeId = null;
     Store.dispatch(
       createTreeAction((id) => {
@@ -343,7 +341,7 @@ class TracingApi {
    * Deletes the tree with the given treeId.
    */
   deleteTree(treeId: number) {
-    assertSkeleton(Store.getState().tracing);
+    assertSkeleton(Store.getState().annotation);
     Store.dispatch(deleteTreeAction(treeId));
   }
 
@@ -363,7 +361,7 @@ class TracingApi {
       skipCenteringAnimationInThirdDimension?: boolean;
     },
   ) {
-    assertSkeleton(Store.getState().tracing);
+    assertSkeleton(Store.getState().annotation);
     const defaultOptions = getOptionsForCreateSkeletonNode();
     createSkeletonNode(
       position,
@@ -382,7 +380,7 @@ class TracingApi {
    * Completely resets the skeleton tracing.
    */
   resetSkeletonTracing() {
-    assertSkeleton(Store.getState().tracing);
+    assertSkeleton(Store.getState().annotation);
     Store.dispatch(resetSkeletonTracingAction());
   }
 
@@ -394,7 +392,7 @@ class TracingApi {
    * api.tracing.setCommentForNode("This is a branch point", activeNodeId);
    */
   setCommentForNode(commentText: string, nodeId: number, treeId?: number): void {
-    const skeletonTracing = assertSkeleton(Store.getState().tracing);
+    const skeletonTracing = assertSkeleton(Store.getState().annotation);
     assertExists(commentText, "Comment text is missing.");
 
     // Convert nodeId to node
@@ -421,7 +419,7 @@ class TracingApi {
    * const comment = api.tracing.getCommentForNode(23, api.getActiveTreeid());
    */
   getCommentForNode(nodeId: number, treeId?: number): string | null | undefined {
-    const skeletonTracing = assertSkeleton(Store.getState().tracing);
+    const skeletonTracing = assertSkeleton(Store.getState().annotation);
     assertExists(nodeId, "Node id is missing.");
     // Convert treeId to tree
     let tree = null;
@@ -448,8 +446,8 @@ class TracingApi {
    * @example
    * api.tracing.setTreeName("Special tree", 1);
    */
-  setTreeName(name: string, treeId: number | null | undefined) {
-    const skeletonTracing = assertSkeleton(Store.getState().tracing);
+  setTreeName(name: string, treeId?: number | null | undefined) {
+    const skeletonTracing = assertSkeleton(Store.getState().annotation);
 
     if (treeId == null) {
       treeId = skeletonTracing.activeTreeId;
@@ -465,7 +463,7 @@ class TracingApi {
    * api.tracing.setTreeEdgeVisibility(false, 1);
    */
   setTreeEdgeVisibility(edgesAreVisible: boolean, treeId: number | null | undefined) {
-    const skeletonTracing = assertSkeleton(Store.getState().tracing);
+    const skeletonTracing = assertSkeleton(Store.getState().annotation);
 
     if (treeId == null) {
       treeId = skeletonTracing.activeTreeId;
@@ -481,8 +479,8 @@ class TracingApi {
    * api.tracing.setActiveTree(3);
    */
   setActiveTree(treeId: number) {
-    const { tracing } = Store.getState();
-    assertSkeleton(tracing);
+    const { annotation } = Store.getState();
+    assertSkeleton(annotation);
     Store.dispatch(setActiveTreeAction(treeId));
   }
 
@@ -493,8 +491,8 @@ class TracingApi {
    * api.tracing.setActiveTree("tree_1");
    */
   setActiveTreeByName(treeName: string) {
-    const { tracing } = Store.getState();
-    assertSkeleton(tracing);
+    const { annotation } = Store.getState();
+    assertSkeleton(annotation);
     Store.dispatch(setActiveTreeByNameAction(treeName));
   }
 
@@ -505,8 +503,8 @@ class TracingApi {
    * api.tracing.setActiveTreeGroup(3);
    */
   setActiveTreeGroup(groupId: number) {
-    const { tracing } = Store.getState();
-    assertSkeleton(tracing);
+    const { annotation } = Store.getState();
+    assertSkeleton(annotation);
     Store.dispatch(setActiveTreeGroupAction(groupId));
   }
 
@@ -525,8 +523,8 @@ class TracingApi {
    * api.tracing.setTreeColorIndex(3, 10);
    */
   setTreeColorIndex(treeId: number | null | undefined, colorIndex: number) {
-    const { tracing } = Store.getState();
-    assertSkeleton(tracing);
+    const { annotation } = Store.getState();
+    assertSkeleton(annotation);
     Store.dispatch(setTreeColorIndexAction(treeId, colorIndex));
   }
 
@@ -537,8 +535,8 @@ class TracingApi {
    * api.tracing.setTreeVisibility(3, false);
    */
   setTreeVisibility(treeId: number | null | undefined, isVisible: boolean) {
-    const { tracing } = Store.getState();
-    assertSkeleton(tracing);
+    const { annotation } = Store.getState();
+    assertSkeleton(annotation);
     Store.dispatch(setTreeVisibilityAction(treeId, isVisible));
   }
 
@@ -549,8 +547,8 @@ class TracingApi {
    * api.tracing.getTreeGroups();
    */
   getTreeGroups(): Array<TreeGroupTypeFlat> {
-    const { tracing } = Store.getState();
-    return getFlatTreeGroups(assertSkeleton(tracing));
+    const { annotation } = Store.getState();
+    return getFlatTreeGroups(assertSkeleton(annotation));
   }
 
   /**
@@ -563,8 +561,8 @@ class TracingApi {
    * );
    */
   setTreeGroup(treeId?: number, groupId?: number) {
-    const { tracing } = Store.getState();
-    const skeletonTracing = assertSkeleton(tracing);
+    const { annotation } = Store.getState();
+    const skeletonTracing = assertSkeleton(annotation);
     const treeGroupMap = getTreeGroupsMap(skeletonTracing);
 
     if (groupId != null && treeGroupMap[groupId] == null) {
@@ -589,8 +587,8 @@ class TracingApi {
    * );
    */
   renameSkeletonGroup(groupId: number, newName: string) {
-    const { tracing } = Store.getState();
-    const skeletonTracing = assertSkeleton(tracing);
+    const { annotation } = Store.getState();
+    const skeletonTracing = assertSkeleton(annotation);
 
     const newTreeGroups = _.cloneDeep(skeletonTracing.treeGroups);
 
@@ -611,7 +609,7 @@ class TracingApi {
    * );
    */
   moveSkeletonGroup(groupId: number, targetGroupId: number | null) {
-    const skeleton = Store.getState().tracing.skeleton;
+    const skeleton = Store.getState().annotation.skeleton;
     if (!skeleton) {
       throw new Error("No skeleton tracing found.");
     }
@@ -625,8 +623,9 @@ class TracingApi {
    * @example
    * api.tracing.registerSegment(
    *   3,
-   *   "volume-layer-id"
    *   [1, 2, 3],
+   *   null,             // optional
+   *   "volume-layer-id" // optional
    * );
    */
   registerSegment(
@@ -660,7 +659,10 @@ class TracingApi {
     const maximumVolume = options?.maximumVolume ?? Constants.REGISTER_SEGMENTS_BB_MAX_VOLUME_VX;
     const maximumSegmentCount =
       options?.maximumSegmentCount ?? Constants.REGISTER_SEGMENTS_BB_MAX_SEGMENT_COUNT;
-    const shape = Utils.computeShapeFromBoundingBox({ min, max });
+    const boundingBoxInMag1 = new BoundingBox({
+      min,
+      max,
+    });
 
     const segmentationLayerName = api.data.getVisibleSegmentationLayerName();
     if (segmentationLayerName == null) {
@@ -669,26 +671,22 @@ class TracingApi {
       );
     }
 
-    const resolutionInfo = getResolutionInfo(
-      getLayerByName(state.dataset, segmentationLayerName).resolutions,
-    );
+    const magInfo = getMagInfo(getLayerByName(state.dataset, segmentationLayerName).resolutions);
     const theoreticalMagIndex = getActiveMagIndexForLayer(state, segmentationLayerName);
-    const existingMagIndex = resolutionInfo.getIndexOrClosestHigherIndex(theoreticalMagIndex);
+    const existingMagIndex = magInfo.getIndexOrClosestHigherIndex(theoreticalMagIndex);
     if (existingMagIndex == null) {
       throw new Error("The index of the current mag could not be found.");
     }
-    const currentMag = resolutionInfo.getResolutionByIndex(existingMagIndex);
+    const currentMag = magInfo.getMagByIndex(existingMagIndex);
     if (currentMag == null) {
       throw new Error("No mag could be found.");
     }
 
-    const volume =
-      Math.ceil(shape[0] / currentMag[0]) *
-      Math.ceil(shape[1] / currentMag[1]) *
-      Math.ceil(shape[2] / currentMag[2]);
+    const boundingBoxInMag = boundingBoxInMag1.fromMag1ToMag(currentMag);
+    const volume = boundingBoxInMag.getVolume();
     if (volume > maximumVolume) {
       throw new Error(
-        `The volume of the bounding box exceeds ${maximumVolume} vx, please make it smaller. Currently, the bounding box has a volume of ${volume} vx in the active resolution (${currentMag.join("-")}).`,
+        `The volume of the bounding box exceeds ${maximumVolume} vx, please make it smaller. Currently, the bounding box has a volume of ${volume} vx in the active magnification (${currentMag.join("-")}).`,
       );
     } else if (volume > maximumVolume / 8) {
       Toast.warning(
@@ -705,12 +703,15 @@ class TracingApi {
       existingMagIndex,
     );
     const [dx, dy, dz] = currentMag;
-
+    // getDataForBoundingBox grows the bounding box to be mag-aligned which can change the dimensions
+    const boundingBoxInMag1MagAligned = boundingBoxInMag1.alignWithMag(currentMag, "grow");
+    const dataMin = boundingBoxInMag1MagAligned.min;
+    const dataMax = boundingBoxInMag1MagAligned.max;
     const segmentIdToPosition = new Map();
     let idx = 0;
-    for (let z = min[2]; z < max[2]; z += dz) {
-      for (let y = min[1]; y < max[1]; y += dy) {
-        for (let x = min[0]; x < max[0]; x += dx) {
+    for (let z = dataMin[2]; z < dataMax[2]; z += dz) {
+      for (let y = dataMin[1]; y < dataMax[1]; y += dy) {
+        for (let x = dataMin[0]; x < dataMax[0]; x += dx) {
           const id = data[idx];
           if (id !== 0 && !segmentIdToPosition.has(id)) {
             segmentIdToPosition.set(id, [x, y, z]);
@@ -816,7 +817,7 @@ class TracingApi {
    * );
    */
   moveSegmentGroup(groupId: number, targetGroupId: number | undefined | null, layerName: string) {
-    const { segmentGroups } = getVolumeTracingById(Store.getState().tracing, layerName);
+    const { segmentGroups } = getVolumeTracingById(Store.getState().annotation, layerName);
     const newSegmentGroups = moveGroupsHelper(segmentGroups, groupId, targetGroupId);
     Store.dispatch(setSegmentGroupsAction(newSegmentGroups, layerName));
   }
@@ -841,7 +842,7 @@ class TracingApi {
       parentGroupId = MISSING_GROUP_ID;
     }
     const volumeTracing = volumeLayerName
-      ? getVolumeTracingByLayerName(Store.getState().tracing, volumeLayerName)
+      ? getVolumeTracingByLayerName(Store.getState().annotation, volumeLayerName)
       : getActiveSegmentationTracing(Store.getState());
     if (volumeTracing == null) {
       throw new Error(`Could not find volume tracing layer with name ${volumeLayerName}`);
@@ -882,7 +883,7 @@ class TracingApi {
    */
   renameSegmentGroup(groupId: number, newName: string, volumeLayerName?: string) {
     const volumeTracing = volumeLayerName
-      ? getVolumeTracingByLayerName(Store.getState().tracing, volumeLayerName)
+      ? getVolumeTracingByLayerName(Store.getState().annotation, volumeLayerName)
       : getActiveSegmentationTracing(Store.getState());
     if (volumeTracing == null) {
       throw new Error(`Could not find volume tracing layer with name ${volumeLayerName}`);
@@ -916,7 +917,7 @@ class TracingApi {
    */
   deleteSegmentGroup(groupId: number, deleteChildren: boolean = false, volumeLayerName?: string) {
     const volumeTracing = volumeLayerName
-      ? getVolumeTracingByLayerName(Store.getState().tracing, volumeLayerName)
+      ? getVolumeTracingByLayerName(Store.getState().annotation, volumeLayerName)
       : getActiveSegmentationTracing(Store.getState());
     if (volumeTracing == null) {
       throw new Error(`Could not find volume tracing layer with name ${volumeLayerName}`);
@@ -1005,7 +1006,7 @@ class TracingApi {
    * api.tracing.getTreeName();
    */
   getTreeName(treeId?: number) {
-    const tracing = assertSkeleton(Store.getState().tracing);
+    const tracing = assertSkeleton(Store.getState().annotation);
     return getTree(tracing, treeId)
       .map((activeTree) => activeTree.name)
       .get();
@@ -1052,7 +1053,7 @@ class TracingApi {
     if (this.isFinishing) return;
     this.isFinishing = true;
     const state = Store.getState();
-    const { annotationType, annotationId } = state.tracing;
+    const { annotationType, annotationId } = state.annotation;
     const { task } = state;
 
     if (task == null) {
@@ -1075,7 +1076,7 @@ class TracingApi {
       const isDifferentDataset = state.dataset.name !== annotation.dataSetName;
       const isDifferentTaskType = annotation.task.type.id !== task.type.id;
       const involvesVolumeTask =
-        state.tracing.volumes.length > 0 || getVolumeDescriptors(annotation).length > 0;
+        state.annotation.volumes.length > 0 || getVolumeDescriptors(annotation).length > 0;
       const currentScript = task.script != null ? task.script.gist : null;
       const nextScript = annotation.task.script != null ? annotation.task.script.gist : null;
       // A hot-swap of the task is not possible, currently, when a script is involved.
@@ -1115,13 +1116,14 @@ class TracingApi {
     newMaybeCompoundType: APICompoundType | null,
     newAnnotationId: string,
     newControlMode: ControlMode,
-    versions?: Versions,
+    version?: number | undefined | null,
     keepUrlState: boolean = false,
+    keepUrlSearch: boolean = true,
   ) {
     if (newControlMode === ControlModeEnum.VIEW)
       throw new Error("Restarting with view option is not supported");
     Store.dispatch(restartSagaAction());
-    UrlManager.reset(keepUrlState);
+    UrlManager.reset(keepUrlState, keepUrlSearch);
 
     newMaybeCompoundType =
       newMaybeCompoundType != null ? coalesce(APICompoundTypeEnum, newMaybeCompoundType) : null;
@@ -1134,7 +1136,7 @@ class TracingApi {
         type: newControlMode,
       },
       false,
-      versions,
+      version,
     );
     Store.dispatch(discardSaveQueuesAction());
     Store.dispatch(wkReadyAction());
@@ -1162,7 +1164,7 @@ class TracingApi {
    * api.tracing.setNodeRadius(1)
    */
   setNodeRadius(delta: number, nodeId?: number, treeId?: number): void {
-    const skeletonTracing = assertSkeleton(Store.getState().tracing);
+    const skeletonTracing = assertSkeleton(Store.getState().annotation);
     getNodeAndTree(skeletonTracing, nodeId, treeId).map(([, node]) =>
       Store.dispatch(setNodeRadiusAction(node.radius * Math.pow(1.05, delta), nodeId, treeId)),
     );
@@ -1175,7 +1177,7 @@ class TracingApi {
    * api.tracing.centerNode()
    */
   centerNode = (nodeId?: number): void => {
-    const skeletonTracing = assertSkeleton(Store.getState().tracing);
+    const skeletonTracing = assertSkeleton(Store.getState().annotation);
     getNodeAndTree(skeletonTracing, nodeId).map(([, node]) => {
       return Store.dispatch(setPositionAction(getNodePosition(node, Store.getState())));
     });
@@ -1223,7 +1225,7 @@ class TracingApi {
    */
   measureTreeLength(treeId: number): [number, number] {
     const state = Store.getState();
-    const skeletonTracing = assertSkeleton(state.tracing);
+    const skeletonTracing = assertSkeleton(state.annotation);
     const tree = skeletonTracing.trees[treeId];
 
     if (!tree) {
@@ -1250,7 +1252,7 @@ class TracingApi {
    * Measures the length of all trees and returns the length in nanometer and in voxels.
    */
   measureAllTrees(): [number, number] {
-    const skeletonTracing = assertSkeleton(Store.getState().tracing);
+    const skeletonTracing = assertSkeleton(Store.getState().annotation);
     let totalLengthInUnit = 0;
     let totalLengthInVx = 0;
 
@@ -1275,7 +1277,7 @@ class TracingApi {
     lengthInVx: number;
     shortestPath: number[];
   } {
-    const skeletonTracing = assertSkeleton(Store.getState().tracing);
+    const skeletonTracing = assertSkeleton(Store.getState().annotation);
     const { node: sourceNode, tree: sourceTree } = getNodeAndTreeOrNull(
       skeletonTracing,
       sourceNodeId,
@@ -1478,8 +1480,8 @@ class TracingApi {
    * Returns the active tool which is either
    * "MOVE", "SKELETON", "TRACE", "BRUSH", "FILL_CELL" or "PICK_CELL"
    */
-  getAnnotationTool(): AnnotationTool {
-    return Store.getState().uiInformation.activeTool;
+  getAnnotationTool(): AnnotationToolId {
+    return Store.getState().uiInformation.activeTool.id;
   }
 
   /**
@@ -1487,10 +1489,11 @@ class TracingApi {
    * "MOVE", "SKELETON", "TRACE", "BRUSH", "FILL_CELL" or "PICK_CELL"
    * _Volume tracing only!_
    */
-  setAnnotationTool(tool: AnnotationTool) {
-    if (AnnotationToolEnum[tool] == null) {
+  setAnnotationTool(toolId: AnnotationToolId) {
+    const tool = AnnotationTool[toolId];
+    if (tool == null) {
       throw new Error(
-        `Annotation tool has to be one of: "${Object.keys(AnnotationToolEnum).join('", "')}".`,
+        `Annotation tool has to be one of: "${Object.keys(AnnotationTool).join('", "')}".`,
       );
     }
 
@@ -1500,36 +1503,15 @@ class TracingApi {
   /**
    * Deprecated! Use getAnnotationTool instead.
    */
-  getVolumeTool(): AnnotationTool {
+  getVolumeTool(): AnnotationToolId {
     return this.getAnnotationTool();
   }
 
   /**
    * Deprecated! Use setAnnotationTool instead.
    */
-  setVolumeTool(tool: AnnotationTool) {
+  setVolumeTool(tool: AnnotationToolId) {
     this.setAnnotationTool(tool);
-  }
-
-  /**
-   * Use this method to create a complete resolution pyramid by downsampling the lowest present mag (e.g., mag 1).
-     This method will save the current changes and then reload the page after the downsampling
-     has finished.
-     This function can only be used for non-tasks.
-      Note that this invoking this method will not block the UI. Thus, user actions can be performed during the
-     downsampling. The caller should prohibit this (e.g., by showing a not-closable modal during the process).
-   */
-  async downsampleSegmentation(volumeTracingId: string) {
-    const state = Store.getState();
-    const { annotationId, annotationType } = state.tracing;
-
-    if (state.task != null) {
-      throw new Error("Cannot downsample segmentation for a task.");
-    }
-
-    await this.save();
-    await downsampleSegmentation(annotationId, annotationType, volumeTracingId);
-    await this.hardReload();
   }
 
   /**
@@ -1613,7 +1595,7 @@ class DataApi {
    * Returns the ids of the existing volume tracing layers.
    */
   getVolumeTracingLayerIds(): Array<string> {
-    return getVolumeTracings(Store.getState().tracing).map((tracing) => tracing.tracingId);
+    return getVolumeTracings(Store.getState().annotation).map((tracing) => tracing.tracingId);
   }
 
   /**
@@ -1635,6 +1617,7 @@ class DataApi {
     layerName: string,
     predicateFn?: (bucket: DataBucket) => boolean,
   ): Promise<void> {
+    const truePredicate = () => true;
     await Promise.all(
       Utils.values(this.model.dataLayers).map(async (dataLayer: DataLayer) => {
         if (dataLayer.name === layerName) {
@@ -1642,7 +1625,7 @@ class DataApi {
             await Model.ensureSavedState();
           }
 
-          dataLayer.cube.collectBucketsIf(predicateFn || (() => true));
+          dataLayer.cube.collectBucketsIf(predicateFn || truePredicate);
           dataLayer.layerRenderingManager.refresh();
         }
       }),
@@ -1653,7 +1636,7 @@ class DataApi {
    * Invalidates all downloaded buckets so that they are reloaded.
    */
   async reloadAllBuckets(): Promise<void> {
-    if (hasVolumeTracings(Store.getState().tracing)) {
+    if (hasVolumeTracings(Store.getState().annotation)) {
       await Model.ensureSavedState();
     }
 
@@ -1682,6 +1665,7 @@ class DataApi {
       colors?: Array<number>;
       hideUnmappedIds?: boolean;
       showLoadingIndicator?: boolean;
+      isMergerModeMapping?: boolean;
     } = {},
   ) {
     const layer = this.model.getLayerByName(layerName);
@@ -1690,7 +1674,12 @@ class DataApi {
       throw new Error(messages["mapping.unsupported_layer"]);
     }
 
-    const { colors: mappingColors, hideUnmappedIds, showLoadingIndicator } = options;
+    const {
+      colors: mappingColors,
+      hideUnmappedIds,
+      showLoadingIndicator,
+      isMergerModeMapping,
+    } = options;
     if (mappingColors != null) {
       // Consider removing custom color support if this event is rarely used
       // (see `mappingColors` handling in mapping_saga.ts)
@@ -1706,6 +1695,7 @@ class DataApi {
       mappingColors,
       hideUnmappedIds,
       showLoadingIndicator,
+      isMergerModeMapping,
     };
     Store.dispatch(setMappingAction(layerName, "<custom mapping>", "JSON", mappingProperties));
   }
@@ -1815,9 +1805,9 @@ class DataApi {
 
   /**
    * Returns raw binary data for a given layer, position and zoom level. If the zoom
-   * level is not provided, the first resolution will be used. If this
-   * resolution does not exist, the next existing resolution will be used.
-   * If the zoom level is provided and points to a not existent resolution,
+   * level is not provided, the first magnification will be used. If this
+   * mag does not exist, the next existing mag will be used.
+   * If the zoom level is provided and points to a not existent mag,
    * 0 will be returned.
    *
    * @example // Return the greyscale value for a bucket
@@ -1842,8 +1832,8 @@ class DataApi {
       zoomStep = _zoomStep;
     } else {
       const layer = getLayerByName(Store.getState().dataset, layerName);
-      const resolutionInfo = getResolutionInfo(layer.resolutions);
-      zoomStep = resolutionInfo.getFinestResolutionIndex();
+      const magInfo = getMagInfo(layer.resolutions);
+      zoomStep = magInfo.getFinestMagIndex();
     }
 
     const cube = this.model.getCubeByLayerName(layerName);
@@ -1899,26 +1889,26 @@ class DataApi {
     additionalCoordinates: AdditionalCoordinate[] | null = null,
   ) {
     const layer = getLayerByName(Store.getState().dataset, layerName);
-    const resolutionInfo = getResolutionInfo(layer.resolutions);
+    const magInfo = getMagInfo(layer.resolutions);
     let zoomStep;
 
     if (_zoomStep != null) {
       zoomStep = _zoomStep;
     } else {
-      zoomStep = resolutionInfo.getFinestResolutionIndex();
+      zoomStep = magInfo.getFinestMagIndex();
     }
 
-    const resolutions = resolutionInfo.getDenseResolutions();
+    const mags = magInfo.getDenseMags();
     const bucketAddresses = this.getBucketAddressesInCuboid(
       mag1Bbox,
-      resolutions,
+      mags,
       zoomStep,
       additionalCoordinates,
     );
 
     if (bucketAddresses.length > 15000) {
       console.warn(
-        "More than 15000 buckets need to be requested for the given bounding box. Consider passing a smaller bounding box or using another resolution.",
+        "More than 15000 buckets need to be requested for the given bounding box. Consider passing a smaller bounding box or using another magnification.",
       );
     }
 
@@ -1926,13 +1916,13 @@ class DataApi {
       bucketAddresses.map((addr) => this.getLoadedBucket(layerName, addr)),
     );
     const { elementClass } = getLayerByName(Store.getState().dataset, layerName);
-    return this.cutOutCuboid(buckets, mag1Bbox, elementClass, resolutions, zoomStep);
+    return this.cutOutCuboid(buckets, mag1Bbox, elementClass, mags, zoomStep);
   }
 
   async getViewportData(
     viewport: OrthoView,
     layerName: string,
-    maybeResolutionIndex: number | null | undefined,
+    maybeMagIndex: number | null | undefined,
     additionalCoordinates: AdditionalCoordinate[] | null,
   ) {
     const state = Store.getState();
@@ -1945,11 +1935,11 @@ class DataApi {
       viewport,
     );
     const layer = getLayerByName(state.dataset, layerName);
-    const resolutionInfo = getResolutionInfo(layer.resolutions);
-    if (maybeResolutionIndex == null) {
-      maybeResolutionIndex = getActiveMagIndexForLayer(state, layerName);
+    const magInfo = getMagInfo(layer.resolutions);
+    if (maybeMagIndex == null) {
+      maybeMagIndex = getActiveMagIndexForLayer(state, layerName);
     }
-    const zoomStep = resolutionInfo.getClosestExistingIndex(maybeResolutionIndex);
+    const zoomStep = magInfo.getClosestExistingIndex(maybeMagIndex);
 
     const min = dimensions.transDim(
       V3.sub([curU, curV, curW], [halfViewportExtentU, halfViewportExtentV, 0]),
@@ -1960,13 +1950,13 @@ class DataApi {
       viewport,
     );
 
-    const resolution = resolutionInfo.getResolutionByIndexOrThrow(zoomStep);
-    const resolutionUVX = dimensions.transDim(resolution, viewport);
-    const widthInVoxel = Math.ceil(halfViewportExtentU / resolutionUVX[0]);
-    const heightInVoxel = Math.ceil(halfViewportExtentV / resolutionUVX[1]);
+    const mag = magInfo.getMagByIndexOrThrow(zoomStep);
+    const magUVX = dimensions.transDim(mag, viewport);
+    const widthInVoxel = Math.ceil(halfViewportExtentU / magUVX[0]);
+    const heightInVoxel = Math.ceil(halfViewportExtentV / magUVX[1]);
     if (widthInVoxel * heightInVoxel > 1024 ** 2) {
       throw new Error(
-        "Requested data for viewport cannot be loaded, since the amount of data is too large for the available resolution. Please zoom in further or ensure that coarser magnifications are available.",
+        "Requested data for viewport cannot be loaded, since the amount of data is too large for the available magnification. Please zoom in further or ensure that coarser magnifications are available.",
       );
     }
 
@@ -1984,7 +1974,7 @@ class DataApi {
 
   getBucketAddressesInCuboid(
     bbox: BoundingBoxType,
-    resolutions: Array<Vector3>,
+    magnifications: Array<Vector3>,
     zoomStep: number,
     additionalCoordinates: AdditionalCoordinate[] | null,
   ): Array<BucketAddress> {
@@ -1992,13 +1982,13 @@ class DataApi {
     const bottomRight = bbox.max;
     const minBucket = globalPositionToBucketPosition(
       bbox.min,
-      resolutions,
+      magnifications,
       zoomStep,
       additionalCoordinates,
     );
 
     const topLeft = (bucketAddress: BucketAddress) =>
-      bucketPositionToGlobalAddress(bucketAddress, new ResolutionInfo(resolutions));
+      bucketPositionToGlobalAddress(bucketAddress, new MagInfo(magnifications));
 
     const nextBucketInDim = (bucket: BucketAddress, dim: 0 | 1 | 2) => {
       const copy = bucket.slice() as BucketAddress;
@@ -2032,15 +2022,15 @@ class DataApi {
     buckets: Array<Bucket>,
     bbox: BoundingBoxType,
     elementClass: ElementClass,
-    resolutions: Array<Vector3>,
+    magnifications: Array<Vector3>,
     zoomStep: number,
   ): TypedArray {
-    const resolution = resolutions[zoomStep];
+    const mag = magnifications[zoomStep];
     // All calculations in this method are in zoomStep-space, so in global coordinates which are divided
-    // by the resolution
-    const topLeft = scaleGlobalPositionWithResolution(bbox.min, resolution);
+    // by the mag
+    const topLeft = scaleGlobalPositionWithMagnification(bbox.min, mag);
     // Ceil the bounding box bottom right instead of flooring, because it is exclusive
-    const bottomRight = scaleGlobalPositionWithResolution(bbox.max, resolution, true);
+    const bottomRight = scaleGlobalPositionWithMagnification(bbox.max, mag, true);
     const extent: Vector3 = V3.sub(bottomRight, topLeft);
     const [TypedArrayClass, channelCount] = getConstructorForElementClass(elementClass);
     const result = new TypedArrayClass(channelCount * extent[0] * extent[1] * extent[2]);
@@ -2103,15 +2093,15 @@ class DataApi {
     topLeft: Vector3,
     bottomRight: Vector3,
     token: string,
-    resolution?: Vector3,
+    magnification?: Vector3,
   ): string {
     const { dataset } = Store.getState();
-    const resolutionInfo = getResolutionInfo(getLayerByName(dataset, layerName, true).resolutions);
-    resolution = resolution || resolutionInfo.getFinestResolution();
+    const magInfo = getMagInfo(getLayerByName(dataset, layerName, true).resolutions);
+    magnification = magnification || magInfo.getFinestMag();
 
-    const magString = resolution.join("-");
+    const magString = magnification.join("-");
     return (
-      `${dataset.dataStore.url}/data/datasets/${dataset.owningOrganization}/${dataset.name}/layers/${layerName}/data?mag=${magString}&` +
+      `${dataset.dataStore.url}/data/datasets/${dataset.owningOrganization}/${dataset.directoryName}/layers/${layerName}/data?mag=${magString}&` +
       `token=${token}&` +
       `x=${Math.floor(topLeft[0])}&` +
       `y=${Math.floor(topLeft[1])}&` +
@@ -2147,7 +2137,7 @@ class DataApi {
     layerName: string,
     topLeft: Vector3,
     bottomRight: Vector3,
-    resolution?: Vector3,
+    magnification?: Vector3,
   ): Promise<ArrayBuffer> {
     return doWithToken((token) => {
       const downloadUrl = this._getDownloadUrlForRawDataCuboid(
@@ -2155,7 +2145,7 @@ class DataApi {
         topLeft,
         bottomRight,
         token,
-        resolution,
+        magnification,
       );
       return Request.receiveArraybuffer(downloadUrl);
     });

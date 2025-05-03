@@ -1,64 +1,64 @@
-import {
-  Divider,
-  Modal,
-  Checkbox,
-  Row,
-  Col,
-  Tabs,
-  Typography,
-  Button,
-  Radio,
-  Alert,
-  Tooltip,
-  type TabsProps,
-} from "antd";
 import { CopyOutlined } from "@ant-design/icons";
-import type React from "react";
-import { useState } from "react";
-import { makeComponentLazy, useFetch } from "libs/react_helpers";
-import {
-  APIJobType,
-  type VoxelSize,
-  type AdditionalAxis,
-  type APIDataLayer,
-  type APIDataset,
-} from "types/api_flow_types";
-import Toast from "libs/toast";
-import messages from "messages";
-import { Model } from "oxalis/singletons";
-import features from "features";
+import { useStartAndPollJob } from "admin/job/job_hooks";
 import {
   doWithToken,
   downloadAnnotation,
   downloadWithFilename,
   getAuthToken,
   startExportTiffJob,
-} from "admin/admin_rest_api";
-import { BoundingBoxSelection, MagSlider } from "oxalis/view/action-bar/starting_job_modals";
+} from "admin/rest_api";
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Col,
+  Divider,
+  Modal,
+  Radio,
+  Row,
+  Tabs,
+  type TabsProps,
+  Tooltip,
+  Typography,
+} from "antd";
+import { LayerSelection } from "components/layer_selection";
+import features from "features";
+import { formatCountToDataAmountUnit, formatScale } from "libs/format_utils";
+import { makeComponentLazy, useFetch } from "libs/react_helpers";
+import Toast from "libs/toast";
+import {
+  computeArrayFromBoundingBox,
+  computeBoundingBoxFromBoundingBoxObject,
+  computeShapeFromBoundingBox,
+} from "libs/utils";
+import messages from "messages";
+import type { BoundingBoxType, Vector3 } from "oxalis/constants";
+import {
+  getByteCountFromLayer,
+  getDataLayers,
+  getLayerByName,
+  getMagInfo,
+} from "oxalis/model/accessors/dataset_accessor";
+import { getAdditionalCoordinatesAsString } from "oxalis/model/accessors/flycam_accessor";
 import { getUserBoundingBoxesFromState } from "oxalis/model/accessors/tracing_accessor";
 import {
   getReadableNameOfVolumeLayer,
   getVolumeTracingById,
   hasVolumeTracings,
 } from "oxalis/model/accessors/volumetracing_accessor";
-import {
-  getByteCountFromLayer,
-  getDataLayers,
-  getLayerByName,
-  getResolutionInfo,
-} from "oxalis/model/accessors/dataset_accessor";
+import { Model } from "oxalis/singletons";
+import type { OxalisState, StoreAnnotation, UserBoundingBox } from "oxalis/store";
+import { BoundingBoxSelection, MagSlider } from "oxalis/view/action-bar/starting_job_modals";
+import type React from "react";
+import { useState } from "react";
 import { useSelector } from "react-redux";
-import type { HybridTracing, OxalisState, UserBoundingBox } from "oxalis/store";
 import {
-  computeArrayFromBoundingBox,
-  computeBoundingBoxFromBoundingBoxObject,
-  computeShapeFromBoundingBox,
-} from "libs/utils";
-import { formatCountToDataAmountUnit, formatScale } from "libs/format_utils";
-import type { BoundingBoxType, Vector3 } from "oxalis/constants";
-import { useStartAndPollJob } from "admin/job/job_hooks";
-import { LayerSelection } from "components/layer_selection";
-import { getAdditionalCoordinatesAsString } from "oxalis/model/accessors/flycam_accessor";
+  type APIDataLayer,
+  type APIDataset,
+  APIJobType,
+  type AdditionalAxis,
+  type VoxelSize,
+} from "types/api_types";
 const { Paragraph, Text } = Typography;
 
 type TabKeys = "download" | "export" | "python";
@@ -91,9 +91,9 @@ const exportKey = (layerInfos: ExportLayerInfos, mag: Vector3) =>
 
 function getExportLayerInfos(
   layer: APIDataLayer,
-  tracing: HybridTracing | null | undefined,
+  annotation: StoreAnnotation | null | undefined,
 ): ExportLayerInfos {
-  const annotationId = tracing != null ? tracing.annotationId : null;
+  const annotationId = annotation != null ? annotation.annotationId : null;
 
   if (layer.category === "color" || !layer.tracingId) {
     return {
@@ -107,12 +107,12 @@ function getExportLayerInfos(
 
   // The layer is a volume tracing layer, since tracingId exists. Therefore, a tracing
   // must exist.
-  if (tracing == null) {
+  if (annotation == null) {
     // Satisfy TS.
     throw new Error("Tracing is null, but layer.tracingId is defined.");
   }
-  const readableVolumeLayerName = getReadableNameOfVolumeLayer(layer, tracing) || "Volume";
-  const volumeTracing = getVolumeTracingById(tracing, layer.tracingId);
+  const readableVolumeLayerName = getReadableNameOfVolumeLayer(layer, annotation) || "Volume";
+  const volumeTracing = getVolumeTracingById(annotation, layer.tracingId);
 
   return {
     displayName: readableVolumeLayerName,
@@ -227,14 +227,14 @@ export function CopyableCodeSnippet({ code, onCopy }: { code: string; onCopy?: (
   );
 }
 
-function getPythonAnnotationDownloadSnippet(authToken: string | null, tracing: HybridTracing) {
+function getPythonAnnotationDownloadSnippet(authToken: string | null, annotation: StoreAnnotation) {
   return `import webknossos as wk
 
 with wk.webknossos_context(
     token="${authToken || "<insert token here>"}",
     url="${window.location.origin}"
 ):
-    annotation = wk.Annotation.download("${tracing.annotationId}")
+    annotation = wk.Annotation.download("${annotation.annotationId}")
 `;
 }
 
@@ -277,7 +277,7 @@ function _DownloadModalView({
   initialBoundingBoxId,
 }: Props): JSX.Element {
   const activeUser = useSelector((state: OxalisState) => state.activeUser);
-  const tracing = useSelector((state: OxalisState) => state.tracing);
+  const annotation = useSelector((state: OxalisState) => state.annotation);
   const dataset = useSelector((state: OxalisState) => state.dataset);
   const rawUserBoundingBoxes = useSelector((state: OxalisState) =>
     getUserBoundingBoxesFromState(state),
@@ -289,9 +289,11 @@ function _DownloadModalView({
   const isMergerModeEnabled = useSelector(
     (state: OxalisState) => state.temporaryConfiguration.isMergerModeEnabled,
   );
-  const hasVolumeFallback = tracing.volumes.some((volume) => volume.fallbackLayer != null);
-  const isVolumeNDimensional = tracing.volumes.some((tracing) => tracing.additionalAxes.length > 0);
-  const hasVolumes = hasVolumeTracings(tracing);
+  const hasVolumeFallback = annotation.volumes.some((volume) => volume.fallbackLayer != null);
+  const isVolumeNDimensional = annotation.volumes.some(
+    (tracing) => tracing.additionalAxes.length > 0,
+  );
+  const hasVolumes = hasVolumeTracings(annotation);
   const initialFileFormatToDownload = hasVolumes ? (isVolumeNDimensional ? "zarr3" : "wkw") : "nml";
 
   const [activeTabKey, setActiveTabKey] = useState<TabKeys>(initialTab ?? "download");
@@ -306,8 +308,8 @@ function _DownloadModalView({
   const layers = getDataLayers(dataset);
 
   const selectedLayer = getLayerByName(dataset, selectedLayerName);
-  const selectedLayerInfos = getExportLayerInfos(selectedLayer, tracing);
-  const selectedLayerResolutionInfo = getResolutionInfo(selectedLayer.resolutions);
+  const selectedLayerInfos = getExportLayerInfos(selectedLayer, annotation);
+  const selectedLayerMagInfo = getMagInfo(selectedLayer.resolutions);
 
   const userBoundingBoxes = [
     ...rawUserBoundingBoxes,
@@ -323,8 +325,8 @@ function _DownloadModalView({
   const [selectedBoundingBoxId, setSelectedBoundingBoxId] = useState(
     initialBoundingBoxId ?? userBoundingBoxes[0].id,
   );
-  const [rawMag, setMag] = useState<Vector3>(selectedLayerResolutionInfo.getFinestResolution());
-  const mag = selectedLayerResolutionInfo.getClosestExistingResolution(rawMag);
+  const [rawMag, setMag] = useState<Vector3>(selectedLayerMagInfo.getFinestMag());
+  const mag = selectedLayerMagInfo.getClosestExistingMag(rawMag);
   const [exportFormat, setExportFormat] = useState<ExportFormat>(ExportFormat.OME_TIFF);
 
   const selectedBoundingBox = userBoundingBoxes.find(
@@ -352,10 +354,10 @@ function _DownloadModalView({
       await Model.ensureSavedState();
       const includeVolumeData = fileFormatToDownload === "wkw" || fileFormatToDownload === "zarr3";
       downloadAnnotation(
-        tracing.annotationId,
-        tracing.annotationType,
+        annotation.annotationId,
+        annotation.annotationType,
         hasVolumeFallback,
-        {},
+        undefined,
         fileFormatToDownload,
         includeVolumeData,
       );
@@ -364,8 +366,7 @@ function _DownloadModalView({
       await Model.ensureSavedState();
       await startJob(async () => {
         const job = await startExportTiffJob(
-          dataset.name,
-          dataset.owningOrganization,
+          dataset.id,
           computeArrayFromBoundingBox(selectedBoundingBox.boundingBox),
           currentAdditionalCoordinates,
           selectedLayerInfos.layerName,
@@ -433,7 +434,7 @@ function _DownloadModalView({
     >
       For more information on how to work with {typeDependentFileName} visit the{" "}
       <a
-        href="https://docs.webknossos.org/webknossos/tooling.html"
+        href="https://docs.webknossos.org/webknossos/data/export_ui.html"
         target="_blank"
         rel="noreferrer"
       >
@@ -478,7 +479,7 @@ function _DownloadModalView({
   );
 
   const wkInitSnippet = isAnnotation
-    ? getPythonAnnotationDownloadSnippet(authToken, tracing)
+    ? getPythonAnnotationDownloadSnippet(authToken, annotation)
     : getPythonDatasetDownloadSnippet(authToken, dataset);
 
   const alertTokenIsPrivate = () => {
@@ -489,7 +490,7 @@ function _DownloadModalView({
     }
   };
 
-  const hasSkeleton = tracing.skeleton != null;
+  const hasSkeleton = annotation.skeleton != null;
 
   const okText = okTextForTab.get(activeTabKey);
   const isCurrentlyRunningExportJob =
@@ -577,6 +578,8 @@ function _DownloadModalView({
     </>
   );
 
+  const onlyOneMagAvailable = selectedLayerMagInfo.getMagList().length === 1;
+
   const tiffExportTab = (
     <>
       <Row>
@@ -620,7 +623,7 @@ function _DownloadModalView({
             value={selectedLayerName}
             onChange={setSelectedLayerName}
             getReadableNameForLayer={(layer) =>
-              getReadableNameOfVolumeLayer(layer, tracing) || layer.name
+              getReadableNameOfVolumeLayer(layer, annotation) || layer.name
             }
             style={{ width: "100%" }}
           />
@@ -643,7 +646,7 @@ function _DownloadModalView({
             style={{ width: "100%" }}
           />
           {boundingBoxCompatibilityAlerts}
-          {selectedLayerInfos.additionalAxes != null && (
+          {(selectedLayerInfos.additionalAxes?.length || 0) > 0 && (
             <Row>
               <Divider
                 style={{
@@ -671,31 +674,30 @@ function _DownloadModalView({
           >
             Mag
           </Divider>
-          <Row>
-            <Col span={19}>
-              <MagSlider
-                resolutionInfo={selectedLayerResolutionInfo}
-                value={mag}
-                onChange={setMag}
-              />
-            </Col>
-            <Col
-              span={5}
-              style={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}
-            >
-              {mag.join("-")}
-            </Col>
-          </Row>
+          {!onlyOneMagAvailable && (
+            <Row>
+              <Col span={19}>
+                <MagSlider magnificationInfo={selectedLayerMagInfo} value={mag} onChange={setMag} />
+              </Col>
+              <Col
+                span={5}
+                style={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}
+              >
+                {mag.join("-")}
+              </Col>
+            </Row>
+          )}
           <Text
             style={{
               margin: "0 6px 12px",
               display: "block",
             }}
           >
+            {onlyOneMagAvailable && <div>{mag.join("-")}</div>}
             Estimated file size:{" "}
             {estimateFileSize(selectedLayer, mag, selectedBoundingBox.boundingBox, exportFormat)}
             <br />
-            Resolution: {formatSelectedScale(dataset, mag)}
+            Magnification: {formatSelectedScale(dataset, mag)}
           </Text>
 
           <Divider />

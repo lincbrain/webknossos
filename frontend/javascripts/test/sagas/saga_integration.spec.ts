@@ -1,8 +1,7 @@
 import update from "immutability-helper";
-import mockRequire from "mock-require";
-import test from "ava";
-import "test/sagas/saga_integration.mock.js";
-import { __setupOxalis, TIMESTAMP } from "test/helpers/apiHelpers";
+import { describe, it, beforeEach, afterEach, expect } from "vitest";
+import "test/sagas/saga_integration.mock";
+import { setupWebknossosForTesting, type WebknossosTestContext } from "test/helpers/apiHelpers";
 import { createSaveQueueFromUpdateActions } from "test/helpers/saveHelpers";
 import { enforceSkeletonTracing } from "oxalis/model/accessors/skeletontracing_accessor";
 import { getStats } from "oxalis/model/accessors/annotation_accessor";
@@ -15,39 +14,44 @@ import dummyUser from "test/fixtures/dummy_user";
 import { hasRootSagaCrashed } from "oxalis/model/sagas/root_saga";
 import { omit } from "lodash";
 
-const {
+import {
   createTreeMapFromTreeArray,
   generateTreeName,
-} = require("oxalis/model/reducers/skeletontracing_reducer_helpers");
+} from "oxalis/model/reducers/skeletontracing_reducer_helpers";
 
-const { addTreesAndGroupsAction, deleteNodeAction } = mockRequire.reRequire(
-  "oxalis/model/actions/skeletontracing_actions",
-);
-const { discardSaveQueuesAction } = mockRequire.reRequire("oxalis/model/actions/save_actions");
-const UpdateActions = mockRequire.reRequire("oxalis/model/sagas/update_actions");
+import {
+  addTreesAndGroupsAction,
+  deleteNodeAction,
+} from "oxalis/model/actions/skeletontracing_actions";
+import { discardSaveQueuesAction } from "oxalis/model/actions/save_actions";
+import * as UpdateActions from "oxalis/model/sagas/update_actions";
+import { TIMESTAMP } from "test/global_mocks";
 
-test.beforeEach(async (t) => {
-  // Setup oxalis, this will execute model.fetch(...) and initialize the store with the tracing, etc.
-  Store.dispatch(restartSagaAction());
-  Store.dispatch(discardSaveQueuesAction());
-  Store.dispatch(setActiveUserAction(dummyUser));
-  await __setupOxalis(t, "task");
-  // Dispatch the wkReadyAction, so the sagas are started
-  Store.dispatch(wkReadyAction());
-});
+describe("Saga Integration Tests", () => {
+  beforeEach<WebknossosTestContext>(async (context) => {
+    // Setup oxalis, this will execute model.fetch(...) and initialize the store with the tracing, etc.
+    Store.dispatch(restartSagaAction());
+    Store.dispatch(discardSaveQueuesAction());
+    Store.dispatch(setActiveUserAction(dummyUser));
 
-test.afterEach(async (t) => {
-  // Saving after each test and checking that the root saga didn't crash,
-  // ensures that each test is cleanly exited. Without it weird output can
-  // occur (e.g., a promise gets resolved which interferes with the next test).
-  t.false(hasRootSagaCrashed());
-});
+    await setupWebknossosForTesting(context, "task");
 
-test.serial(
-  "watchTreeNames saga should rename empty trees in tasks and these updates should be persisted",
-  (t) => {
+    // Dispatch the wkReadyAction, so the sagas are started
+    Store.dispatch(wkReadyAction());
+  });
+
+  afterEach<WebknossosTestContext>(async (context) => {
+    context.tearDownPullQueues();
+    // Saving after each test and checking that the root saga didn't crash,
+    // ensures that each test is cleanly exited. Without it weird output can
+    // occur (e.g., a promise gets resolved which interferes with the next test).
+    expect(hasRootSagaCrashed()).toBe(false);
+  });
+
+  it("watchTreeNames saga should rename empty trees in tasks and these updates should be persisted", () => {
     const state = Store.getState();
-    const treeWithEmptyName = enforceSkeletonTracing(state.tracing).trees[1];
+    const skeletonTracing = enforceSkeletonTracing(state.annotation);
+    const treeWithEmptyName = skeletonTracing.trees[1];
     const treeWithCorrectName = update(treeWithEmptyName, {
       name: {
         $set: generateTreeName(state, treeWithEmptyName.timestamp, treeWithEmptyName.treeId),
@@ -56,9 +60,9 @@ test.serial(
     const expectedSaveQueue = createSaveQueueFromUpdateActions(
       [
         [
-          UpdateActions.updateTree(treeWithCorrectName),
+          UpdateActions.updateTree(treeWithCorrectName, skeletonTracing.tracingId),
           UpdateActions.updateSkeletonTracing(
-            Store.getState().tracing.skeleton,
+            enforceSkeletonTracing(Store.getState().annotation),
             [1, 2, 3],
             [],
             [0, 0, 0],
@@ -67,54 +71,61 @@ test.serial(
         ],
       ],
       TIMESTAMP,
-      getStats(state.tracing, "skeleton", "irrelevant_in_skeleton_case") || undefined,
+      getStats(state.annotation) || undefined,
     );
     // Reset the info field which is just for debugging purposes
-    const actualSaveQueue = state.save.queue.skeleton.map((entry) => {
+    const actualSaveQueue = state.save.queue.map((entry) => {
       return { ...omit(entry, "info"), info: "[]" };
     });
     // Once the updateTree update action is in the save queue, we're good.
     // This means the setTreeName action was dispatched, the diffing ran, and the change will be persisted.
-    t.deepEqual(expectedSaveQueue, actualSaveQueue);
-  },
-);
+    expect(expectedSaveQueue).toEqual(actualSaveQueue);
+  });
 
-test.serial("Save actions should not be chunked below the chunk limit (1/3)", (t) => {
-  Store.dispatch(discardSaveQueuesAction());
-  t.deepEqual(Store.getState().save.queue.skeleton, []);
-  const trees = generateDummyTrees(1000, 1);
-  Store.dispatch(addTreesAndGroupsAction(createTreeMapFromTreeArray(trees), []));
-  t.is(Store.getState().save.queue.skeleton.length, 1);
-  t.true(
-    Store.getState().save.queue.skeleton[0].actions.length <
-      MAXIMUM_ACTION_COUNT_PER_BATCH.skeleton,
-  );
-});
+  it("Save actions should not be chunked below the chunk limit (1/3)", () => {
+    Store.dispatch(discardSaveQueuesAction());
+    expect(Store.getState().save.queue).toEqual([]);
 
-test.serial("Save actions should be chunked above the chunk limit (2/3)", (t) => {
-  Store.dispatch(discardSaveQueuesAction());
-  t.deepEqual(Store.getState().save.queue.skeleton, []);
-  const trees = generateDummyTrees(5000, 1);
-  Store.dispatch(addTreesAndGroupsAction(createTreeMapFromTreeArray(trees), []));
-  const state = Store.getState();
-  t.true(state.save.queue.skeleton.length > 1);
-  t.is(state.save.queue.skeleton[0].actions.length, MAXIMUM_ACTION_COUNT_PER_BATCH.skeleton);
-});
+    // This will create 250 trees with one node each. Thus, 500 update actions will
+    // be sent to the server (two per node).
+    const trees = generateDummyTrees(250, 1);
+    Store.dispatch(addTreesAndGroupsAction(createTreeMapFromTreeArray(trees), []));
 
-test.serial("Save actions should be chunked after compacting (3/3)", (t) => {
-  const nodeCount = 20000;
-  // Test that a tree split is detected even when the involved node count is above the chunk limit
-  const trees = generateDummyTrees(1, nodeCount);
-  Store.dispatch(addTreesAndGroupsAction(createTreeMapFromTreeArray(trees), []));
-  Store.dispatch(discardSaveQueuesAction());
-  t.deepEqual(Store.getState().save.queue.skeleton, []);
-  // Delete some node, NOTE that this is not the node in the middle of the tree!
-  // The addTreesAndGroupsAction gives new ids to nodes and edges in a non-deterministic way.
-  const middleNodeId = trees[0].nodes[nodeCount / 2].id;
-  Store.dispatch(deleteNodeAction(middleNodeId));
-  const { skeleton: skeletonSaveQueue } = Store.getState().save.queue;
-  // There should only be one chunk
-  t.is(skeletonSaveQueue.length, 1);
-  t.true(skeletonSaveQueue[0].actions.length < MAXIMUM_ACTION_COUNT_PER_BATCH.skeleton);
-  t.is(skeletonSaveQueue[0].actions[1].name, "moveTreeComponent");
+    expect(Store.getState().save.queue.length).toBe(1);
+    expect(Store.getState().save.queue[0].actions.length).toBeLessThan(
+      MAXIMUM_ACTION_COUNT_PER_BATCH,
+    );
+  });
+
+  it("Save actions should be chunked above the chunk limit (2/3)", () => {
+    Store.dispatch(discardSaveQueuesAction());
+    expect(Store.getState().save.queue).toEqual([]);
+
+    const trees = generateDummyTrees(5000, 2);
+    Store.dispatch(addTreesAndGroupsAction(createTreeMapFromTreeArray(trees), []));
+    const state = Store.getState();
+
+    expect(state.save.queue.length).toBeGreaterThan(1);
+    expect(state.save.queue[0].actions.length).toBe(MAXIMUM_ACTION_COUNT_PER_BATCH);
+  });
+
+  it("Save actions should be chunked after compacting (3/3)", () => {
+    const nodeCount = 20000;
+    // Test that a tree split is detected even when the involved node count is above the chunk limit
+    const trees = generateDummyTrees(1, nodeCount);
+
+    Store.dispatch(addTreesAndGroupsAction(createTreeMapFromTreeArray(trees), []));
+    Store.dispatch(discardSaveQueuesAction());
+    expect(Store.getState().save.queue).toEqual([]);
+    // Delete some node, NOTE that this is not the node in the middle of the tree!
+    // The addTreesAndGroupsAction gives new ids to nodes and edges in a non-deterministic way.
+    const middleNodeId = trees[0].nodes[nodeCount / 2].id;
+    Store.dispatch(deleteNodeAction(middleNodeId));
+    const skeletonSaveQueue = Store.getState().save.queue;
+
+    // There should only be one chunk
+    expect(skeletonSaveQueue.length).toBe(1);
+    expect(skeletonSaveQueue[0].actions.length).toBeLessThan(MAXIMUM_ACTION_COUNT_PER_BATCH);
+    expect(skeletonSaveQueue[0].actions[1].name).toBe("moveTreeComponent");
+  });
 });

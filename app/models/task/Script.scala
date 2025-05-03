@@ -7,7 +7,7 @@ import com.scalableminds.webknossos.schema.Tables._
 import models.user.{UserDAO, UserService}
 import play.api.libs.json._
 import slick.lifted.Rep
-import utils.ObjectId
+import com.scalableminds.util.objectid.ObjectId
 import utils.sql.{SQLDAO, SqlClient, SqlToken}
 
 import javax.inject.Inject
@@ -40,7 +40,7 @@ class ScriptService @Inject()(userDAO: UserDAO, userService: UserService) {
   }
 
   def assertValidScriptName(scriptName: String)(implicit ec: ExecutionContext): Fox[Unit] =
-    Fox.bool2Fox(scriptName.matches("^[A-Za-z0-9\\-_\\. ß]+$")) ?~> "script.name.invalid.characters"
+    Fox.fromBool(scriptName.matches("^[A-Za-z0-9\\-_\\. ß]+$")) ?~> "script.name.invalid.characters"
 }
 
 object Script {

@@ -1,37 +1,38 @@
 import Maybe from "data.maybe";
 import _ from "lodash";
+import { IdentityTransform, type TreeType, type Vector3 } from "oxalis/constants";
 import type {
-  ServerTracing,
-  ServerSkeletonTracing,
-  APIAnnotation,
-  AnnotationLayerDescriptor,
-} from "types/api_flow_types";
-import type {
-  Tracing,
-  SkeletonTracing,
-  Tree,
-  TreeMap,
   BranchPoint,
+  Node,
+  NumberLike,
+  OxalisState,
+  SkeletonTracing,
+  StoreAnnotation,
+  Tree,
   TreeGroup,
   TreeGroupTypeFlat,
-  Node,
-  OxalisState,
-  NumberLike,
+  TreeMap,
 } from "oxalis/store";
 import {
-  findGroup,
   MISSING_GROUP_ID,
-} from "oxalis/view/right-border-tabs/tree_hierarchy_view_helpers";
-import type { TreeType, Vector3 } from "oxalis/constants";
+  findGroup,
+} from "oxalis/view/right-border-tabs/trees_tab/tree_hierarchy_view_helpers";
 import {
-  getTransformsForSkeletonLayer,
-  getTransformsForSkeletonLayerOrNull,
-} from "./dataset_accessor";
+  type APIAnnotation,
+  type AnnotationLayerDescriptor,
+  AnnotationLayerEnum,
+  type ServerSkeletonTracing,
+  type ServerTracing,
+} from "types/api_types";
 import { invertTransform, transformPointUnscaled } from "../helpers/transformation_helpers";
+import {
+  getTransformsForLayerThatDoesNotSupportTransformationConfigOrNull,
+  getTransformsForSkeletonLayer,
+} from "./dataset_layer_transformation_accessor";
 
-export function getSkeletonTracing(tracing: Tracing): Maybe<SkeletonTracing> {
-  if (tracing.skeleton != null) {
-    return Maybe.Just(tracing.skeleton);
+export function getSkeletonTracing(annotation: StoreAnnotation): Maybe<SkeletonTracing> {
+  if (annotation.skeleton != null) {
+    return Maybe.Just(annotation.skeleton);
   }
 
   return Maybe.Nothing();
@@ -41,7 +42,7 @@ export function getSkeletonDescriptor(
   annotation: APIAnnotation,
 ): AnnotationLayerDescriptor | null | undefined {
   const skeletonLayers = annotation.annotationLayers.filter(
-    (descriptor) => descriptor.typ === "Skeleton",
+    (descriptor) => descriptor.typ === AnnotationLayerEnum.Skeleton,
   );
 
   if (skeletonLayers.length > 0) {
@@ -64,8 +65,8 @@ export function getNullableSkeletonTracing(
   return null;
 }
 
-export function enforceSkeletonTracing(tracing: Tracing): SkeletonTracing {
-  return getSkeletonTracing(tracing).get();
+export function enforceSkeletonTracing(annotation: StoreAnnotation): SkeletonTracing {
+  return getSkeletonTracing(annotation).get();
 }
 
 export function getActiveNode(skeletonTracing: SkeletonTracing): Node | null {
@@ -175,7 +176,7 @@ export function getNodeAndTree(
     let node = null;
 
     if (nodeId != null) {
-      node = tree.nodes.getOrThrow(nodeId);
+      node = tree.nodes.getNullable(nodeId);
     } else {
       const { activeNodeId } = skeletonTracing;
 
@@ -216,13 +217,17 @@ export function getNodeAndTreeOrNull(
     });
 }
 
-export function isSkeletonLayerTransformed(state: OxalisState) {
-  return (
-    getTransformsForSkeletonLayerOrNull(
-      state.dataset,
-      state.datasetConfiguration.nativelyRenderedLayerName,
-    ) != null
+export function areGeometriesTransformed(state: OxalisState) {
+  const transformation = getTransformsForLayerThatDoesNotSupportTransformationConfigOrNull(
+    state.dataset,
+    state.datasetConfiguration.nativelyRenderedLayerName,
   );
+  return transformation != null && transformation !== IdentityTransform;
+}
+
+export function isSkeletonLayerVisible(annotation: StoreAnnotation) {
+  const skeletonLayer = getSkeletonTracing(annotation);
+  return skeletonLayer.isNothing ? false : skeletonLayer.get().showSkeletons;
 }
 
 export function getNodePosition(node: Node, state: OxalisState): Vector3 {
@@ -231,16 +236,14 @@ export function getNodePosition(node: Node, state: OxalisState): Vector3 {
 
 export function transformNodePosition(position: Vector3, state: OxalisState): Vector3 {
   const dataset = state.dataset;
-  const nativelyRenderedLayerName = state.datasetConfiguration.nativelyRenderedLayerName;
-
+  const { nativelyRenderedLayerName } = state.datasetConfiguration;
   const currentTransforms = getTransformsForSkeletonLayer(dataset, nativelyRenderedLayerName);
   return transformPointUnscaled(currentTransforms)(position);
 }
 
 export function untransformNodePosition(position: Vector3, state: OxalisState): Vector3 {
   const dataset = state.dataset;
-  const nativelyRenderedLayerName = state.datasetConfiguration.nativelyRenderedLayerName;
-
+  const { nativelyRenderedLayerName } = state.datasetConfiguration;
   const currentTransforms = getTransformsForSkeletonLayer(dataset, nativelyRenderedLayerName);
   return transformPointUnscaled(invertTransform(currentTransforms))(position);
 }
@@ -263,8 +266,8 @@ export function getMaxNodeId(skeletonTracing: SkeletonTracing): number | null {
 
   return maxNodeId === Number.NEGATIVE_INFINITY ? null : maxNodeId;
 }
-export function getBranchPoints(tracing: Tracing): Maybe<Array<BranchPoint>> {
-  return getSkeletonTracing(tracing).map((skeletonTracing) =>
+export function getBranchPoints(annotation: StoreAnnotation): Maybe<Array<BranchPoint>> {
+  return getSkeletonTracing(annotation).map((skeletonTracing) =>
     _.flatMap(skeletonTracing.trees, (tree) => tree.branchPoints),
   );
 }

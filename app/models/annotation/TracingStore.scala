@@ -32,7 +32,7 @@ object TracingStore {
 class TracingStoreService @Inject()(
     tracingStoreDAO: TracingStoreDAO,
     rpc: RPC,
-    tracingDataSourceTemporaryStore: TracingDataSourceTemporaryStore)(implicit ec: ExecutionContext)
+    tracingDataSourceTemporaryStore: AnnotationDataSourceTemporaryStore)(implicit ec: ExecutionContext)
     extends FoxImplicits
     with LazyLogging
     with Results {
@@ -46,13 +46,14 @@ class TracingStoreService @Inject()(
 
   def validateAccess(name: String, key: String)(block: TracingStore => Future[Result])(
       implicit m: MessagesProvider): Fox[Result] =
-    tracingStoreDAO
-      .findOneByKey(key) // Check if key is valid
-      .flatMap(tracingStore => block(tracingStore)) // Run underlying action
-      .getOrElse {
-        logger.info(s"Denying tracing store request from $name due to unknown key.")
-        Forbidden(Messages("tracingStore.notFound"))
-      } // Default error
+    Fox.fromFuture(
+      tracingStoreDAO
+        .findOneByKey(key) // Check if key is valid
+        .flatMap(tracingStore => Fox.fromFuture(block(tracingStore))) // Run underlying action
+        .getOrElse {
+          logger.info(s"Denying tracing store request from $name due to unknown key.")
+          Forbidden(Messages("tracingStore.notFound"))
+        }) // Default error
 
   def clientFor(dataset: Dataset)(implicit ctx: DBAccessContext): Fox[WKRemoteTracingStoreClient] =
     for {

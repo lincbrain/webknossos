@@ -7,7 +7,7 @@ import models.annotation._
 import models.project.ProjectDAO
 import models.user.{User, UserService}
 
-import utils.ObjectId
+import com.scalableminds.util.objectid.ObjectId
 
 import scala.concurrent.ExecutionContext
 
@@ -22,14 +22,14 @@ class ProjectInformationHandler @Inject()(annotationDAO: AnnotationDAO,
       implicit ctx: DBAccessContext): Fox[Annotation] =
     for {
       project <- projectDAO.findOne(projectId) ?~> "project.notFound"
-      user <- userOpt ?~> "user.notAuthorised"
+      user <- userOpt.toFox ?~> "user.notAuthorised"
       _ <- Fox.assertTrue(userService.isTeamManagerOrAdminOf(user, project._team))
       annotations <- annotationDAO.findAllFinishedForProject(project._id)
       _ <- assertAllOnSameDataset(annotations)
       _ <- assertNonEmpty(annotations) ?~> "project.noAnnotations"
       datasetId <- annotations.headOption.map(_._dataset).toFox
       mergedAnnotation <- annotationMerger.mergeN(projectId,
-                                                  persistTracing = false,
+                                                  toTemporaryStore = true,
                                                   user._id,
                                                   datasetId,
                                                   project._team,

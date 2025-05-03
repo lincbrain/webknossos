@@ -1,10 +1,10 @@
 package com.scalableminds.webknossos.datastore.services
 
 import com.google.inject.Inject
+import com.scalableminds.util.accesscontext.TokenContext
 import com.scalableminds.util.geometry.{Vec3Double, Vec3Int}
 import com.scalableminds.util.time.Instant
-import com.scalableminds.util.tools.Fox
-import com.scalableminds.util.tools.Fox.{bool2Fox, box2Fox, option2Fox}
+import com.scalableminds.util.tools.{Fox, FoxImplicits}
 import com.scalableminds.webknossos.datastore.DataStoreConfig
 import com.scalableminds.webknossos.datastore.models.{AdditionalCoordinate, VoxelPosition}
 import com.scalableminds.webknossos.datastore.models.datasource.{DataSource, SegmentationLayer}
@@ -42,6 +42,7 @@ class DSFullMeshService @Inject()(dataSourceRepository: DataSourceRepository,
                                   adHocMeshServiceHolder: AdHocMeshServiceHolder)
     extends LazyLogging
     with FullMeshHelper
+    with FoxImplicits
     with MeshMappingHelper {
 
   val binaryDataService: BinaryDataService = binaryDataServiceHolder.binaryDataService
@@ -49,22 +50,24 @@ class DSFullMeshService @Inject()(dataSourceRepository: DataSourceRepository,
     (binaryDataService, mappingService, config.Datastore.AdHocMesh.timeout, config.Datastore.AdHocMesh.actorPoolSize)
   val adHocMeshService: AdHocMeshService = adHocMeshServiceHolder.dataStoreAdHocMeshService
 
-  def loadFor(token: Option[String],
-              organizationId: String,
-              datasetName: String,
+  def loadFor(organizationId: String,
+              datasetDirectoryName: String,
               dataLayerName: String,
-              fullMeshRequest: FullMeshRequest)(implicit ec: ExecutionContext, m: MessagesProvider): Fox[Array[Byte]] =
+              fullMeshRequest: FullMeshRequest)(implicit ec: ExecutionContext,
+                                                m: MessagesProvider,
+                                                tc: TokenContext): Fox[Array[Byte]] =
     fullMeshRequest.meshFileName match {
       case Some(_) =>
-        loadFullMeshFromMeshfile(token, organizationId, datasetName, dataLayerName, fullMeshRequest)
-      case None => loadFullMeshFromAdHoc(organizationId, datasetName, dataLayerName, fullMeshRequest)
+        loadFullMeshFromMeshfile(organizationId, datasetDirectoryName, dataLayerName, fullMeshRequest)
+      case None => loadFullMeshFromAdHoc(organizationId, datasetDirectoryName, dataLayerName, fullMeshRequest)
     }
 
-  private def loadFullMeshFromAdHoc(
-      organizationId: String,
-      datasetName: String,
-      dataLayerName: String,
-      fullMeshRequest: FullMeshRequest)(implicit ec: ExecutionContext, m: MessagesProvider): Fox[Array[Byte]] =
+  private def loadFullMeshFromAdHoc(organizationId: String,
+                                    datasetName: String,
+                                    dataLayerName: String,
+                                    fullMeshRequest: FullMeshRequest)(implicit ec: ExecutionContext,
+                                                                      m: MessagesProvider,
+                                                                      tc: TokenContext): Fox[Array[Byte]] =
     for {
       mag <- fullMeshRequest.mag.toFox ?~> "mag.neededForAdHoc"
       seedPosition <- fullMeshRequest.seedPosition.toFox ?~> "seedPosition.neededForAdHoc"
@@ -90,13 +93,15 @@ class DSFullMeshService @Inject()(dataSourceRepository: DataSourceRepository,
       topLeft: VoxelPosition,
       chunkSize: Vec3Int,
       visited: collection.mutable.Set[VoxelPosition] = collection.mutable.Set[VoxelPosition]())(
-      implicit ec: ExecutionContext): Fox[List[Array[Float]]] = {
+      implicit ec: ExecutionContext,
+      tc: TokenContext): Fox[List[Array[Float]]] = {
     val adHocMeshRequest = AdHocMeshRequest(
       Some(dataSource),
       segmentationLayer,
       Cuboid(topLeft, chunkSize.x + 1, chunkSize.y + 1, chunkSize.z + 1),
       fullMeshRequest.segmentId,
       dataSource.scale.factor,
+      tc,
       fullMeshRequest.mappingName,
       fullMeshRequest.mappingType,
       fullMeshRequest.additionalCoordinates
@@ -113,58 +118,64 @@ class DSFullMeshService @Inject()(dataSourceRepository: DataSourceRepository,
     } yield allVertices
   }
 
-  private def loadFullMeshFromMeshfile(
-      token: Option[String],
-      organizationId: String,
-      datasetName: String,
-      layerName: String,
-      fullMeshRequest: FullMeshRequest)(implicit ec: ExecutionContext, m: MessagesProvider): Fox[Array[Byte]] =
+  private def loadFullMeshFromMeshfile(organizationId: String,
+                                       datasetDirectoryName: String,
+                                       layerName: String,
+                                       fullMeshRequest: FullMeshRequest)(implicit ec: ExecutionContext,
+                                                                         m: MessagesProvider,
+                                                                         tc: TokenContext): Fox[Array[Byte]] =
     for {
       meshFileName <- fullMeshRequest.meshFileName.toFox ?~> "meshFileName.needed"
       before = Instant.now
       mappingNameForMeshFile = meshFileService.mappingNameForMeshFile(organizationId,
-                                                                      datasetName,
+                                                                      datasetDirectoryName,
                                                                       layerName,
                                                                       meshFileName)
       segmentIds <- segmentIdsForAgglomerateIdIfNeeded(
         organizationId,
-        datasetName,
+        datasetDirectoryName,
         layerName,
         fullMeshRequest.mappingName,
         fullMeshRequest.editableMappingTracingId,
         fullMeshRequest.segmentId,
         mappingNameForMeshFile,
-        omitMissing = false,
-        token
+        omitMissing = false
       )
       chunkInfos: WebknossosSegmentInfo <- meshFileService.listMeshChunksForSegmentsMerged(organizationId,
-                                                                                           datasetName,
+                                                                                           datasetDirectoryName,
                                                                                            layerName,
                                                                                            meshFileName,
                                                                                            segmentIds)
       allChunkRanges: List[MeshChunk] = chunkInfos.chunks.lods.head.chunks
       stlEncodedChunks: Seq[Array[Byte]] <- Fox.serialCombined(allChunkRanges) { chunkRange: MeshChunk =>
-        readMeshChunkAsStl(organizationId, datasetName, layerName, meshFileName, chunkRange, chunkInfos.transform)
+        readMeshChunkAsStl(organizationId,
+                           datasetDirectoryName,
+                           layerName,
+                           meshFileName,
+                           chunkRange,
+                           chunkInfos.transform)
       }
       stlOutput = combineEncodedChunksToStl(stlEncodedChunks)
       _ = logMeshingDuration(before, "meshfile", stlOutput.length)
     } yield stlOutput
 
   private def readMeshChunkAsStl(organizationId: String,
-                                 datasetName: String,
+                                 datasetDirectoryName: String,
                                  layerName: String,
                                  meshfileName: String,
                                  chunkInfo: MeshChunk,
                                  transform: Array[Array[Double]])(implicit ec: ExecutionContext): Fox[Array[Byte]] =
     for {
-      (dracoMeshChunkBytes, encoding) <- meshFileService.readMeshChunk(
-        organizationId,
-        datasetName,
-        layerName,
-        MeshChunkDataRequestList(meshfileName, List(MeshChunkDataRequest(chunkInfo.byteOffset, chunkInfo.byteSize)))
-      ) ?~> "mesh.file.loadChunk.failed"
-      _ <- bool2Fox(encoding == "draco") ?~> s"meshfile encoding is $encoding, only draco is supported"
-      scale <- tryo(Vec3Double(transform(0)(0), transform(1)(1), transform(2)(2))) ?~> "could not extract scale from meshfile transform attribute"
+      (dracoMeshChunkBytes, encoding) <- meshFileService
+        .readMeshChunk(
+          organizationId,
+          datasetDirectoryName,
+          layerName,
+          MeshChunkDataRequestList(meshfileName, List(MeshChunkDataRequest(chunkInfo.byteOffset, chunkInfo.byteSize)))
+        )
+        .toFox ?~> "mesh.file.loadChunk.failed"
+      _ <- Fox.fromBool(encoding == "draco") ?~> s"meshfile encoding is $encoding, only draco is supported"
+      scale <- tryo(Vec3Double(transform(0)(0), transform(1)(1), transform(2)(2))).toFox ?~> "could not extract scale from meshfile transform attribute"
       stlEncodedChunk <- tryo(
         dracoToStlConverter.dracoToStl(dracoMeshChunkBytes,
                                        chunkInfo.position.x,
@@ -172,7 +183,7 @@ class DSFullMeshService @Inject()(dataSourceRepository: DataSourceRepository,
                                        chunkInfo.position.z,
                                        scale.x,
                                        scale.y,
-                                       scale.z))
+                                       scale.z)).toFox
     } yield stlEncodedChunk
 
 }

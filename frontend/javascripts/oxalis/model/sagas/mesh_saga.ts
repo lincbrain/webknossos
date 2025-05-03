@@ -1,87 +1,95 @@
-import { saveAs } from "file-saver";
-import _ from "lodash";
-import { V3 } from "libs/mjs";
-import { areVec3AlmostEqual, chunkDynamically, sleep } from "libs/utils";
-import ErrorHandling from "libs/error_handling";
-import type { APIDataset, APIMeshFile, APISegmentationLayer } from "types/api_flow_types";
-import { mergeBufferGeometries } from "libs/BufferGeometryUtils";
-import Deferred from "libs/async/deferred";
-import type { ActionPattern } from "redux-saga/effects";
-
-import Store from "oxalis/store";
-import {
-  getResolutionInfo,
-  getMappingInfo,
-  getVisibleSegmentationLayer,
-  getSegmentationLayerByName,
-} from "oxalis/model/accessors/dataset_accessor";
-import {
-  type LoadAdHocMeshAction,
-  type LoadPrecomputedMeshAction,
-  type AdHocMeshInfo,
-  loadPrecomputedMeshAction,
-} from "oxalis/model/actions/segmentation_actions";
-import type { Action } from "oxalis/model/actions/actions";
-import type { Vector3 } from "oxalis/constants";
-import { AnnotationToolEnum, MappingStatusEnum } from "oxalis/constants";
-import {
-  type UpdateMeshVisibilityAction,
-  type RemoveMeshAction,
-  type RefreshMeshAction,
-  type TriggerMeshDownloadAction,
-  type MaybeFetchMeshFilesAction,
-  updateMeshFileListAction,
-  updateCurrentMeshFileAction,
-  dispatchMaybeFetchMeshFilesAsync,
-  removeMeshAction,
-  addAdHocMeshAction,
-  addPrecomputedMeshAction,
-  finishedLoadingMeshAction,
-  startedLoadingMeshAction,
-  type TriggerMeshesDownloadAction,
-  updateMeshVisibilityAction,
-} from "oxalis/model/actions/annotation_actions";
-import type { Saga } from "oxalis/model/sagas/effect-generators";
-import { select } from "oxalis/model/sagas/effect-generators";
-import { actionChannel, takeEvery, call, take, race, put, all } from "typed-redux-saga";
-import { stlMeshConstants } from "oxalis/view/right-border-tabs/segments_tab/segments_view";
 import {
   computeAdHocMesh,
-  sendAnalyticsEvent,
-  meshApi,
-  getMeshfilesForDatasetLayer,
   getBucketPositionsForAdHocMesh,
-} from "admin/admin_rest_api";
-import { zoomedAddressToAnotherZoomStepWithInfo } from "oxalis/model/helpers/position_converter";
-import type DataLayer from "oxalis/model/data_layer";
-import { Model } from "oxalis/singletons";
+  getMeshfilesForDatasetLayer,
+  meshApi,
+  sendAnalyticsEvent,
+} from "admin/rest_api";
+import { saveAs } from "file-saver";
+import { mergeGeometries } from "libs/BufferGeometryUtils";
 import ThreeDMap from "libs/ThreeDMap";
+import Deferred from "libs/async/deferred";
+import processTaskWithPool from "libs/async/task_pool";
+import { computeBvhAsync } from "libs/compute_bvh_async";
+import { getDracoLoader } from "libs/draco";
+import ErrorHandling from "libs/error_handling";
+import { V3 } from "libs/mjs";
 import exportToStl from "libs/stl_exporter";
+import Toast from "libs/toast";
+import { areVec3AlmostEqual, chunkDynamically, sleep } from "libs/utils";
+import Zip from "libs/zipjs_wrapper";
+import _ from "lodash";
+import messages from "messages";
+import { WkDevFlags } from "oxalis/api/wk_dev";
+import type { Vector3 } from "oxalis/constants";
+import { MappingStatusEnum } from "oxalis/constants";
+import CustomLOD from "oxalis/controller/custom_lod";
+import {
+  type BufferGeometryWithInfo,
+  type UnmergedBufferGeometryWithInfo,
+  VertexSegmentMapping,
+} from "oxalis/controller/mesh_helpers";
 import getSceneController from "oxalis/controller/scene_controller_provider";
+import {
+  getMagInfo,
+  getMappingInfo,
+  getSegmentationLayerByName,
+  getVisibleSegmentationLayer,
+} from "oxalis/model/accessors/dataset_accessor";
 import {
   getActiveSegmentationTracing,
   getEditableMappingForVolumeTracingId,
   getMeshInfoForSegment,
   getTracingForSegmentationLayer,
 } from "oxalis/model/accessors/volumetracing_accessor";
+import type { Action } from "oxalis/model/actions/actions";
+import {
+  type MaybeFetchMeshFilesAction,
+  type RefreshMeshAction,
+  type RemoveMeshAction,
+  type TriggerMeshDownloadAction,
+  type TriggerMeshesDownloadAction,
+  type UpdateMeshOpacityAction,
+  type UpdateMeshVisibilityAction,
+  addAdHocMeshAction,
+  addPrecomputedMeshAction,
+  dispatchMaybeFetchMeshFilesAsync,
+  finishedLoadingMeshAction,
+  removeMeshAction,
+  startedLoadingMeshAction,
+  updateCurrentMeshFileAction,
+  updateMeshFileListAction,
+  updateMeshVisibilityAction,
+} from "oxalis/model/actions/annotation_actions";
 import { saveNowAction } from "oxalis/model/actions/save_actions";
-import Toast from "libs/toast";
-import { getDracoLoader } from "libs/draco";
-import messages from "messages";
-import processTaskWithPool from "libs/async/task_pool";
+import {
+  type AdHocMeshInfo,
+  type LoadAdHocMeshAction,
+  type LoadPrecomputedMeshAction,
+  loadPrecomputedMeshAction,
+} from "oxalis/model/actions/segmentation_actions";
+import type DataLayer from "oxalis/model/data_layer";
+import { zoomedAddressToAnotherZoomStepWithInfo } from "oxalis/model/helpers/position_converter";
+import type { Saga } from "oxalis/model/sagas/effect-generators";
+import { select } from "oxalis/model/sagas/effect-generators";
+import { Model } from "oxalis/singletons";
+import Store from "oxalis/store";
+import { stlMeshConstants } from "oxalis/view/right-border-tabs/segments_tab/segments_view";
 import { getBaseSegmentationName } from "oxalis/view/right-border-tabs/segments_tab/segments_view_helper";
+import type { ActionPattern } from "redux-saga/effects";
+import type * as THREE from "three";
+import { actionChannel, all, call, put, race, take, takeEvery } from "typed-redux-saga";
+import type { APIDataset, APIMeshFile, APISegmentationLayer } from "types/api_types";
+import type { AdditionalCoordinate } from "types/api_types";
+import { getAdditionalCoordinatesAsString } from "../accessors/flycam_accessor";
+import type { FlycamAction } from "../actions/flycam_actions";
 import type {
   BatchUpdateGroupsAndSegmentsAction,
   RemoveSegmentAction,
   UpdateSegmentAction,
 } from "../actions/volumetracing_actions";
-import type { ResolutionInfo } from "../helpers/resolution_info";
-import type { AdditionalCoordinate } from "types/api_flow_types";
-import Zip from "libs/zipjs_wrapper";
-import type { FlycamAction } from "../actions/flycam_actions";
-import { getAdditionalCoordinatesAsString } from "../accessors/flycam_accessor";
-import type { BufferGeometryWithInfo } from "oxalis/controller/segment_mesh_controller";
-import { WkDevFlags } from "oxalis/api/wk_dev";
+import type { MagInfo } from "../helpers/mag_info";
+import { ensureSceneControllerReady, ensureWkReady } from "./ready_sagas";
 
 export const NO_LOD_MESH_INDEX = -1;
 const MAX_RETRY_COUNT = 5;
@@ -99,7 +107,7 @@ const MESH_CHUNK_THROTTLE_LIMIT = 50;
 
 /*
  *
- * Ad Hoc Meshes
+ * Ad-Hoc Meshes
  *
  */
 // Maps from additional coordinates, layerName and segmentId to a ThreeDMap that stores for each chunk
@@ -155,12 +163,12 @@ function removeMapForSegment(
   adhocMeshesMapByLayer[additionalCoordinateKey][layerName].delete(segmentId);
 }
 
-function getCubeSizeInMag1(zoomStep: number, resolutionInfo: ResolutionInfo): Vector3 {
+function getCubeSizeInMag1(zoomStep: number, magInfo: MagInfo): Vector3 {
   // Convert marchingCubeSizeInTargetMag to mag1 via zoomStep
   // Drop the last element of the Vector4;
   const [x, y, z] = zoomedAddressToAnotherZoomStepWithInfo(
     [...marchingCubeSizeInTargetMag(), zoomStep],
-    resolutionInfo,
+    magInfo,
     0,
   );
   return [x, y, z];
@@ -169,9 +177,9 @@ function getCubeSizeInMag1(zoomStep: number, resolutionInfo: ResolutionInfo): Ve
 function clipPositionToCubeBoundary(
   position: Vector3,
   zoomStep: number,
-  resolutionInfo: ResolutionInfo,
+  magInfo: MagInfo,
 ): Vector3 {
-  const cubeSizeInMag1 = getCubeSizeInMag1(zoomStep, resolutionInfo);
+  const cubeSizeInMag1 = getCubeSizeInMag1(zoomStep, magInfo);
   const currentCube = V3.floor(V3.divide3(position, cubeSizeInMag1));
   const clippedPosition = V3.scale3(currentCube, cubeSizeInMag1);
   return clippedPosition;
@@ -191,10 +199,10 @@ function getNeighborPosition(
   clippedPosition: Vector3,
   neighborId: number,
   zoomStep: number,
-  resolutionInfo: ResolutionInfo,
+  magInfo: MagInfo,
 ): Vector3 {
   const neighborMultiplier = NEIGHBOR_LOOKUP[neighborId];
-  const cubeSizeInMag1 = getCubeSizeInMag1(zoomStep, resolutionInfo);
+  const cubeSizeInMag1 = getCubeSizeInMag1(zoomStep, magInfo);
   const neighboringPosition: Vector3 = [
     clippedPosition[0] + neighborMultiplier[0] * cubeSizeInMag1[0],
     clippedPosition[1] + neighborMultiplier[1] * cubeSizeInMag1[1],
@@ -204,13 +212,22 @@ function getNeighborPosition(
 }
 
 function* loadAdHocMeshFromAction(action: LoadAdHocMeshAction): Saga<void> {
+  const { layerName } = action;
+  const layer =
+    layerName != null ? Model.getLayerByName(layerName) : Model.getVisibleSegmentationLayer();
+  if (layer == null) {
+    return;
+  }
+  // Remove older mesh instance if it exists already.
+  yield* put(removeMeshAction(layer.name, action.segmentId));
+
   yield* call(
     loadAdHocMesh,
     action.seedPosition,
     action.seedAdditionalCoordinates,
     action.segmentId,
     false,
-    action.layerName,
+    layer.name,
     action.extraInfo,
   );
 }
@@ -238,19 +255,19 @@ function* getInfoForMeshLoading(
   meshExtraInfo: AdHocMeshInfo,
 ): Saga<{
   zoomStep: number;
-  resolutionInfo: ResolutionInfo;
+  magInfo: MagInfo;
 }> {
-  const resolutionInfo = getResolutionInfo(layer.resolutions);
+  const magInfo = getMagInfo(layer.mags);
   const preferredZoomStep =
     meshExtraInfo.preferredQuality != null
       ? meshExtraInfo.preferredQuality
       : yield* select(
           (state) => state.temporaryConfiguration.preferredQualityForMeshAdHocComputation,
         );
-  const zoomStep = resolutionInfo.getClosestExistingIndex(preferredZoomStep);
+  const zoomStep = magInfo.getClosestExistingIndex(preferredZoomStep);
   return {
     zoomStep,
-    resolutionInfo,
+    magInfo: magInfo,
   };
 }
 
@@ -259,13 +276,12 @@ function* loadAdHocMesh(
   seedAdditionalCoordinates: AdditionalCoordinate[] | undefined | null,
   segmentId: number,
   removeExistingMesh: boolean = false,
-  layerName?: string | null | undefined,
+  layerName: string,
   maybeExtraInfo?: AdHocMeshInfo,
 ): Saga<void> {
-  const layer =
-    layerName != null ? Model.getLayerByName(layerName) : Model.getVisibleSegmentationLayer();
+  const layer = Model.getLayerByName(layerName);
 
-  if (segmentId === 0 || layer == null) {
+  if (segmentId === 0) {
     return;
   }
 
@@ -273,7 +289,7 @@ function* loadAdHocMesh(
 
   const meshExtraInfo = yield* call(getMeshExtraInfo, layer.name, maybeExtraInfo);
 
-  const { zoomStep, resolutionInfo } = yield* call(getInfoForMeshLoading, layer, meshExtraInfo);
+  const { zoomStep, magInfo } = yield* call(getInfoForMeshLoading, layer, meshExtraInfo);
   batchCounterPerSegment[segmentId] = 0;
 
   // If a REMOVE_MESH action is dispatched and consumed
@@ -289,7 +305,7 @@ function* loadAdHocMesh(
       seedAdditionalCoordinates,
       zoomStep,
       meshExtraInfo,
-      resolutionInfo,
+      magInfo,
       removeExistingMesh,
     ),
     cancel: take(
@@ -322,12 +338,12 @@ function* loadFullAdHocMesh(
   additionalCoordinates: AdditionalCoordinate[] | undefined | null,
   zoomStep: number,
   meshExtraInfo: AdHocMeshInfo,
-  resolutionInfo: ResolutionInfo,
+  magInfo: MagInfo,
   removeExistingMesh: boolean,
 ): Saga<void> {
   let isInitialRequest = true;
   const { mappingName, mappingType } = meshExtraInfo;
-  const clippedPosition = clipPositionToCubeBoundary(position, zoomStep, resolutionInfo);
+  const clippedPosition = clipPositionToCubeBoundary(position, zoomStep, magInfo);
   yield* put(
     addAdHocMeshAction(
       layer.name,
@@ -341,8 +357,8 @@ function* loadFullAdHocMesh(
   yield* put(startedLoadingMeshAction(layer.name, segmentId));
 
   const cubeSize = marchingCubeSizeInTargetMag();
-  const tracingStoreHost = yield* select((state) => state.tracing.tracingStore.url);
-  const mag = resolutionInfo.getResolutionByIndexOrThrow(zoomStep);
+  const tracingStoreHost = yield* select((state) => state.annotation.tracingStore.url);
+  const mag = magInfo.getMagByIndexOrThrow(zoomStep);
 
   const volumeTracing = yield* select((state) => getActiveSegmentationTracing(state));
   const visibleSegmentationLayer = yield* select((state) => getVisibleSegmentationLayer(state));
@@ -391,7 +407,7 @@ function* loadFullAdHocMesh(
       currentPosition,
       zoomStep,
       meshExtraInfo,
-      resolutionInfo,
+      magInfo,
       isInitialRequest,
       removeExistingMesh && isInitialRequest,
       useDataStore,
@@ -442,7 +458,7 @@ function* maybeLoadMeshChunk(
   clippedPosition: Vector3,
   zoomStep: number,
   meshExtraInfo: AdHocMeshInfo,
-  resolutionInfo: ResolutionInfo,
+  magInfo: MagInfo,
   isInitialRequest: boolean,
   removeExistingMesh: boolean,
   useDataStore: boolean,
@@ -464,14 +480,14 @@ function* maybeLoadMeshChunk(
   const scaleFactor = yield* select((state) => state.dataset.dataSource.scale.factor);
   const dataStoreHost = yield* select((state) => state.dataset.dataStore.url);
   const owningOrganization = yield* select((state) => state.dataset.owningOrganization);
-  const datasetName = yield* select((state) => state.dataset.name);
-  const tracingStoreHost = yield* select((state) => state.tracing.tracingStore.url);
-  const dataStoreUrl = `${dataStoreHost}/data/datasets/${owningOrganization}/${datasetName}/layers/${
+  const datasetDirectoryName = yield* select((state) => state.dataset.directoryName);
+  const tracingStoreHost = yield* select((state) => state.annotation.tracingStore.url);
+  const dataStoreUrl = `${dataStoreHost}/data/datasets/${owningOrganization}/${datasetDirectoryName}/layers/${
     layer.fallbackLayer != null ? layer.fallbackLayer : layer.name
   }`;
   const tracingStoreUrl = `${tracingStoreHost}/tracings/volume/${layer.name}`;
 
-  const mag = resolutionInfo.getResolutionByIndexOrThrow(zoomStep);
+  const mag = magInfo.getMagByIndexOrThrow(zoomStep);
 
   if (isInitialRequest) {
     sendAnalyticsEvent("request_isosurface", {
@@ -510,14 +526,21 @@ function* maybeLoadMeshChunk(
         segmentMeshController.removeMeshById(segmentId, layer.name);
       }
 
-      segmentMeshController.addMeshFromVertices(
+      // We await addMeshFromVerticesAsync here, because the mesh saga will remove
+      // an ad-hoc loaded mesh immediately if it was "empty". Since the check is
+      // done by looking at the scene, we await the population of the scene.
+      // Theoretically, this could be built differently so that other ad-hoc chunks
+      // can be loaded in parallel to addMeshFromVerticesAsync. However, it's unclear
+      // how big the bottleneck really is.
+      yield* call(
+        { fn: segmentMeshController.addMeshFromVerticesAsync, context: segmentMeshController },
         vertices,
         segmentId,
         layer.name,
         additionalCoordinates,
       );
       return neighbors.map((neighbor) =>
-        getNeighborPosition(clippedPosition, neighbor, zoomStep, resolutionInfo),
+        getNeighborPosition(clippedPosition, neighbor, zoomStep, magInfo),
       );
     } catch (exception) {
       retryCount++;
@@ -590,9 +613,6 @@ function* refreshMesh(action: RefreshMeshAction): Saga<void> {
   }
 
   if (meshInfo.isPrecomputed) {
-    const isProofreadingActive = yield* select(
-      (state) => state.uiInformation.activeTool === AnnotationToolEnum.PROOFREAD,
-    );
     yield* put(removeMeshAction(layerName, meshInfo.segmentId));
     yield* put(
       loadPrecomputedMeshAction(
@@ -601,7 +621,6 @@ function* refreshMesh(action: RefreshMeshAction): Saga<void> {
         meshInfo.seedAdditionalCoordinates,
         meshInfo.meshFileName,
         layerName,
-        !isProofreadingActive,
       ),
     );
   } else {
@@ -673,7 +692,7 @@ function* _refreshMeshWithMap(
 
 // Avoid redundant fetches of mesh files for the same layer by
 // storing Deferreds per layer lazily.
-const fetchDeferredsPerLayer: Record<string, Deferred<Array<APIMeshFile>, unknown>> = {};
+let fetchDeferredsPerLayer: Record<string, Deferred<Array<APIMeshFile>, unknown>> = {};
 function* maybeFetchMeshFiles(action: MaybeFetchMeshFilesAction): Saga<void> {
   const { segmentationLayer, dataset, mustRequest, autoActivate, callback } = action;
 
@@ -725,20 +744,17 @@ function* maybeFetchMeshFiles(action: MaybeFetchMeshFilesAction): Saga<void> {
 }
 
 function* loadPrecomputedMesh(action: LoadPrecomputedMeshAction) {
-  const {
-    segmentId,
-    seedPosition,
-    seedAdditionalCoordinates,
-    meshFileName,
-    layerName,
-    mergeChunks,
-  } = action;
+  const { segmentId, seedPosition, seedAdditionalCoordinates, meshFileName, layerName } = action;
   const layer = yield* select((state) =>
     layerName != null
       ? getSegmentationLayerByName(state.dataset, layerName)
       : getVisibleSegmentationLayer(state),
   );
   if (layer == null) return;
+
+  // Remove older mesh instance if it exists already.
+  yield* put(removeMeshAction(layer.name, action.segmentId));
+
   // If a REMOVE_MESH action is dispatched and consumed
   // here before loadPrecomputedMeshForSegmentId is finished, the latter saga
   // should be canceled automatically to avoid populating mesh data even though
@@ -751,7 +767,6 @@ function* loadPrecomputedMesh(action: LoadPrecomputedMeshAction) {
       seedAdditionalCoordinates,
       meshFileName,
       layer,
-      mergeChunks,
     ),
     cancel: take(
       ((otherAction: Action) =>
@@ -770,7 +785,6 @@ function* loadPrecomputedMeshForSegmentId(
   seedAdditionalCoordinates: AdditionalCoordinate[] | undefined | null,
   meshFileName: string,
   segmentationLayer: APISegmentationLayer,
-  mergeChunks: boolean,
 ): Saga<void> {
   const layerName = segmentationLayer.name;
   const mappingName = yield* call(getMappingName, segmentationLayer);
@@ -781,7 +795,6 @@ function* loadPrecomputedMeshForSegmentId(
       seedPosition,
       seedAdditionalCoordinates,
       meshFileName,
-      mergeChunks,
       mappingName,
     ),
   );
@@ -834,25 +847,20 @@ function* loadPrecomputedMeshForSegmentId(
     return;
   }
 
-  const loadChunksTasks = _getLoadChunksTasks(
-    dataset,
-    layerName,
-    meshFile,
-    segmentationLayer,
-    id,
-    seedPosition,
-    availableChunksMap,
-    loadingOrder,
-    scale,
-    additionalCoordinates,
-    mergeChunks,
-  );
-
-  try {
-    yield* call(processTaskWithPool, loadChunksTasks, PARALLEL_PRECOMPUTED_MESH_LOADING_COUNT);
-  } catch (exception) {
-    Toast.warning(`Some mesh chunks could not be loaded for segment ${id}.`);
-    console.error(exception);
+  for (const lod of loadingOrder) {
+    yield* call(
+      loadPrecomputedMeshesInChunksForLod,
+      dataset,
+      layerName,
+      meshFile,
+      segmentationLayer,
+      id,
+      seedPosition,
+      availableChunksMap,
+      lod,
+      scale,
+      additionalCoordinates,
+    );
   }
 
   yield* put(finishedLoadingMeshAction(layerName, id));
@@ -922,10 +930,18 @@ function* _getChunkLoadingDescriptors(
     availableChunksMap[lodIndex] = chunks?.chunks;
     loadingOrder.push(lodIndex);
   });
+  const currentLODGroup: CustomLOD =
+    (yield* call(
+      {
+        context: segmentMeshController,
+        fn: segmentMeshController.getLODGroupOfLayer,
+      },
+      segmentationLayer.name,
+    )) ?? new CustomLOD();
   const currentLODIndex = yield* call(
     {
-      context: segmentMeshController.meshesLODRootGroup,
-      fn: segmentMeshController.meshesLODRootGroup.getCurrentLOD,
+      context: currentLODGroup,
+      fn: currentLODGroup.getCurrentLOD,
     },
     Math.max(...loadingOrder),
   );
@@ -939,7 +955,7 @@ function* _getChunkLoadingDescriptors(
   };
 }
 
-function _getLoadChunksTasks(
+function* loadPrecomputedMeshesInChunksForLod(
   dataset: APIDataset,
   layerName: string,
   meshFile: APIMeshFile,
@@ -947,130 +963,159 @@ function _getLoadChunksTasks(
   id: number,
   seedPosition: Vector3,
   availableChunksMap: ChunksMap,
-  loadingOrder: number[],
+  lod: number,
   scale: Vector3 | null,
   additionalCoordinates: AdditionalCoordinate[] | null,
-  mergeChunks: boolean,
 ) {
   const { segmentMeshController } = getSceneController();
   const { meshFileName } = meshFile;
   const loader = getDracoLoader();
-  return _.compact(
-    _.flatten(
-      loadingOrder.map((lod) => {
-        if (availableChunksMap[lod] == null) {
-          return;
+  if (availableChunksMap[lod] == null) {
+    return;
+  }
+  const availableChunks = availableChunksMap[lod];
+  // Sort the chunks by distance to the seedPosition, so that the mesh loads from the inside out
+  const sortedAvailableChunks = sortByDistanceTo(availableChunks, seedPosition);
+
+  const batches = chunkDynamically(
+    sortedAvailableChunks as meshApi.MeshChunk[],
+    MIN_BATCH_SIZE_IN_BYTES,
+    (chunk) => chunk.byteSize,
+  );
+
+  let bufferGeometries: UnmergedBufferGeometryWithInfo[] = [];
+  const tasks = batches.map(
+    (chunks) =>
+      function* loadChunks(): Saga<void> {
+        const dataForChunks = yield* call(
+          meshApi.getMeshfileChunkData,
+          dataset.dataStore.url,
+          dataset,
+          getBaseSegmentationName(segmentationLayer),
+          {
+            meshFile: meshFileName,
+            // Only extract the relevant properties
+            requests: chunks.map(({ byteOffset, byteSize }) => ({
+              byteOffset,
+              byteSize,
+            })),
+          },
+        );
+
+        const errorsWithDetails = [];
+
+        for (const [chunk, data] of _.zip(chunks, dataForChunks)) {
+          try {
+            if (chunk == null || data == null) {
+              throw new Error("Unexpected null value.");
+            }
+            const position = chunk.position;
+            const bufferGeometry = (yield* call(
+              loader.decodeDracoFileAsync,
+              data,
+            )) as UnmergedBufferGeometryWithInfo;
+            bufferGeometry.unmappedSegmentId = chunk.unmappedSegmentId;
+
+            bufferGeometry.translate(position[0], position[1], position[2]);
+            // Compute vertex normals to achieve smooth shading. We do this here
+            // within the chunk-specific code (instead of after all chunks are merged)
+            // to distribute the workload a bit over time.
+            bufferGeometry.computeVertexNormals();
+
+            yield* call(
+              {
+                context: segmentMeshController,
+                fn: segmentMeshController.addMeshFromGeometry,
+              },
+              bufferGeometry,
+              id,
+              // Apply the scale from the segment info, which includes dataset scale and mag
+              scale,
+              lod,
+              layerName,
+              additionalCoordinates,
+              false,
+            );
+
+            bufferGeometries.push(bufferGeometry);
+          } catch (error) {
+            errorsWithDetails.push({ error, chunk });
+          }
         }
-        const availableChunks = availableChunksMap[lod];
-        // Sort the chunks by distance to the seedPosition, so that the mesh loads from the inside out
-        const sortedAvailableChunks = sortByDistanceTo(availableChunks, seedPosition);
 
-        const batches = chunkDynamically(
-          sortedAvailableChunks as meshApi.MeshChunk[],
-          MIN_BATCH_SIZE_IN_BYTES,
-          (chunk) => chunk.byteSize,
-        );
+        if (errorsWithDetails.length > 0) {
+          console.warn("Errors occurred while decoding mesh chunks:", errorsWithDetails);
+          // Use first error as representative
+          throw errorsWithDetails[0].error;
+        }
+      },
+  );
 
-        const tasks = batches.map(
-          (chunks) =>
-            function* loadChunks(): Saga<void> {
-              const dataForChunks = yield* call(
-                meshApi.getMeshfileChunkData,
-                dataset.dataStore.url,
-                dataset,
-                getBaseSegmentationName(segmentationLayer),
-                {
-                  meshFile: meshFileName,
-                  // Only extract the relevant properties
-                  requests: chunks.map(({ byteOffset, byteSize }) => ({ byteOffset, byteSize })),
-                },
-              );
+  try {
+    yield* call(processTaskWithPool, tasks, PARALLEL_PRECOMPUTED_MESH_LOADING_COUNT);
+  } catch (exception) {
+    Toast.warning(`Some mesh chunks could not be loaded for segment ${id}.`);
+    console.error(exception);
+  }
 
-              const errorsWithDetails = [];
+  // Merge Chunks
+  const sortedBufferGeometries = _.sortBy(
+    bufferGeometries,
+    (geometryWithInfo) => geometryWithInfo.unmappedSegmentId,
+  );
 
-              const chunksWithData = chunks.map((chunk, idx) => ({
-                ...chunk,
-                data: dataForChunks[idx],
-              }));
-              // Group chunks by position and merge meshes in the same chunk to keep the number
-              // of objects in the scene low for better performance. Ideally, more mesh geometries
-              // would be merged, but the meshes in different chunks need to be translated differently.
-              const chunksGroupedByPosition = _.groupBy(chunksWithData, "position");
-              for (const chunksForPosition of Object.values(chunksGroupedByPosition)) {
-                // All chunks in chunksForPosition have the same position
-                const position = chunksForPosition[0].position;
+  const mergedGeometry = mergeGeometries(
+    sortedBufferGeometries,
+    false,
+  ) as BufferGeometryWithInfo | null;
 
-                let bufferGeometries: BufferGeometryWithInfo[] = [];
-                for (let chunkIdx = 0; chunkIdx < chunksForPosition.length; chunkIdx++) {
-                  const chunk = chunksForPosition[chunkIdx];
-                  try {
-                    const bufferGeometry = (yield* call(
-                      loader.decodeDracoFileAsync,
-                      chunk.data,
-                    )) as BufferGeometryWithInfo;
-                    bufferGeometry.unmappedSegmentId = chunk.unmappedSegmentId;
-                    bufferGeometries.push(bufferGeometry);
-                  } catch (error) {
-                    errorsWithDetails.push({ error, chunk });
-                  }
-                }
+  if (mergedGeometry == null) {
+    console.error("Merged geometry is null. Look at error above.");
+    return;
+  }
+  mergedGeometry.vertexSegmentMapping = new VertexSegmentMapping(sortedBufferGeometries);
+  mergedGeometry.boundsTree = yield* call(computeBvhAsync, mergedGeometry);
 
-                if (mergeChunks) {
-                  const geometry = mergeBufferGeometries(bufferGeometries, true);
+  // Check if the mesh scale is different to all supported mags of the active segmentation scaled by the dataset scale and warn in the console to make debugging easier in such a case.
+  // This hint at the mesh file being computed when the dataset scale was different than currently configured.
+  const segmentationLayerMags = yield* select(
+    (state) => getVisibleSegmentationLayer(state)?.resolutions,
+  );
+  const datasetScaleFactor = dataset.dataSource.scale.factor;
+  if (segmentationLayerMags && scale) {
+    const doesSomeSegmentMagMatchMeshScale = segmentationLayerMags.some((res) =>
+      areVec3AlmostEqual(V3.scale3(datasetScaleFactor, res), scale),
+    );
+    if (!doesSomeSegmentMagMatchMeshScale) {
+      console.warn(
+        `Scale of mesh ${id} is different to dataset scale. Mesh scale: ${scale}, Dataset scale: ${dataset.dataSource.scale.factor}. This might lead to unexpected rendering results.`,
+      );
+    }
+  }
 
-                  // If mergeBufferGeometries does not succeed, the method logs the error to the console and returns null
-                  if (geometry == null) continue;
-                  (geometry as BufferGeometryWithInfo).isMerged = true;
-                  bufferGeometries = [geometry as BufferGeometryWithInfo];
-                }
+  yield* call(
+    {
+      context: segmentMeshController,
+      fn: segmentMeshController.removeMeshById,
+    },
+    id,
+    layerName,
+    { lod },
+  );
 
-                // Compute vertex normals to achieve smooth shading
-                bufferGeometries.forEach((geometry) => geometry.computeVertexNormals());
-
-                // Check if the mesh scale is different to all supported resolutions of the active segmentation scaled by the dataset scale and warn in the console to make debugging easier in such a case.
-                // This hint at the mesh file being computed when the dataset scale was different than currently configured.
-                const segmentationLayerResolutions = yield* select(
-                  (state) => getVisibleSegmentationLayer(state)?.resolutions,
-                );
-                const datasetScaleFactor = dataset.dataSource.scale.factor;
-                if (segmentationLayerResolutions && scale) {
-                  const doesSomeSegmResolutionMatchMeshScale = segmentationLayerResolutions.some(
-                    (res) => areVec3AlmostEqual(V3.scale3(datasetScaleFactor, res), scale),
-                  );
-                  if (!doesSomeSegmResolutionMatchMeshScale) {
-                    console.warn(
-                      `Scale of mesh ${id} is different to dataset scale. Mesh scale: ${scale}, Dataset scale: ${dataset.dataSource.scale.factor}. This might lead to unexpected rendering results.`,
-                    );
-                  }
-                }
-
-                yield* call(
-                  {
-                    context: segmentMeshController,
-                    fn: segmentMeshController.addMeshFromGeometries,
-                  },
-                  bufferGeometries,
-                  id,
-                  position,
-                  // Apply the scale from the segment info, which includes dataset scale and mag
-                  scale,
-                  lod,
-                  layerName,
-                  additionalCoordinates,
-                );
-              }
-
-              if (errorsWithDetails.length > 0) {
-                console.warn("Errors occurred while decoding mesh chunks:", errorsWithDetails);
-                // Use first error as representative
-                throw errorsWithDetails[0].error;
-              }
-            },
-        );
-
-        return tasks;
-      }),
-    ),
+  yield* call(
+    {
+      context: segmentMeshController,
+      fn: segmentMeshController.addMeshFromGeometry,
+    },
+    mergedGeometry,
+    id,
+    // Apply the scale from the segment info, which includes dataset scale and mag
+    scale,
+    lod,
+    layerName,
+    additionalCoordinates,
+    true,
   );
 }
 
@@ -1085,7 +1130,7 @@ function sortByDistanceTo(
 
 /*
  *
- * Ad Hoc and Precomputed Meshes
+ * Ad-Hoc and Precomputed Meshes
  *
  */
 function* downloadMeshCellById(cellName: string, segmentId: number, layerName: string): Saga<void> {
@@ -1169,15 +1214,9 @@ function* downloadMeshCells(action: TriggerMeshesDownloadAction): Saga<void> {
 }
 
 function* handleRemoveSegment(action: RemoveSegmentAction) {
-  const additionalCoordinates = yield* select((state) => state.flycam.additionalCoordinates);
-  const additionalCoordKey = getAdditionalCoordinatesAsString(additionalCoordinates);
-  const { layerName, segmentId } = action;
-  if (adhocMeshesMapByLayer[additionalCoordKey]?.[layerName]?.get(segmentId) != null) {
-    // The dispatched action will make sure that the mesh entry is removed from the
-    // store **and** from the scene. Otherwise, the store will still contain a reference
-    // to the mesh even though it's not in the scene, anymore.
-    yield* put(removeMeshAction(action.layerName, action.segmentId));
-  }
+  // The dispatched action will make sure that the mesh entry is removed from the
+  // store and from the scene.
+  yield* put(removeMeshAction(action.layerName, action.segmentId));
 }
 
 function* removeMesh(action: RemoveMeshAction, removeFromScene: boolean = true): Saga<void> {
@@ -1198,11 +1237,11 @@ function* handleMeshVisibilityChange(action: UpdateMeshVisibilityAction): Saga<v
   segmentMeshController.setMeshVisibility(id, visibility, layerName, additionalCoordinates);
 }
 
-export function* handleAdditionalCoordinateUpdate(): Saga<void> {
+export function* handleAdditionalCoordinateUpdate(): Saga<never> {
   // We want to prevent iterating through all additional coordinates to adjust the mesh visibility, so we store the
   // previous additional coordinates in this method. Thus we have to catch SET_ADDITIONAL_COORDINATES actions in a
   // while-true loop and register this saga in the root saga instead of calling from the mesh saga.
-  yield* take("WK_READY");
+  yield* call(ensureWkReady);
 
   let previousAdditionalCoordinates = yield* select((state) => state.flycam.additionalCoordinates);
   const { segmentMeshController } = yield* call(getSceneController);
@@ -1211,11 +1250,13 @@ export function* handleAdditionalCoordinateUpdate(): Saga<void> {
     const action = (yield* take(["SET_ADDITIONAL_COORDINATES"]) as any) as FlycamAction;
     // Satisfy TS
     if (action.type !== "SET_ADDITIONAL_COORDINATES") {
-      throw new Error("Unexpected action type");
+      // Don't throw as this would interfere with the never return type
+      console.error("Unexpected action.type. Ignoring SET_ADDITIONAL_COORDINATES action...");
+      continue;
     }
     const meshRecords = segmentMeshController.meshesGroupsPerSegmentId;
 
-    if (action.values == null || action.values.length === 0) break;
+    if (action.values == null || action.values.length === 0) continue;
     const newAdditionalCoordKey = getAdditionalCoordinatesAsString(action.values);
 
     for (const additionalCoordinates of [action.values, previousAdditionalCoordinates]) {
@@ -1262,6 +1303,11 @@ function* handleSegmentColorChange(action: UpdateSegmentAction): Saga<void> {
   }
 }
 
+function* handleMeshOpacityChange(action: UpdateMeshOpacityAction): Saga<void> {
+  const { segmentMeshController } = yield* call(getSceneController);
+  segmentMeshController.setMeshOpacity(action.id, action.layerName, action.opacity);
+}
+
 function* handleBatchSegmentColorChange(
   batchAction: BatchUpdateGroupsAndSegmentsAction,
 ): Saga<void> {
@@ -1277,13 +1323,14 @@ function* handleBatchSegmentColorChange(
 }
 
 export default function* meshSaga(): Saga<void> {
+  fetchDeferredsPerLayer = {};
   // Buffer actions since they might be dispatched before WK_READY
   const loadAdHocMeshActionChannel = yield* actionChannel("LOAD_AD_HOC_MESH_ACTION");
   const loadPrecomputedMeshActionChannel = yield* actionChannel("LOAD_PRECOMPUTED_MESH_ACTION");
   const maybeFetchMeshFilesActionChannel = yield* actionChannel("MAYBE_FETCH_MESH_FILES");
 
-  yield* take("SCENE_CONTROLLER_READY");
-  yield* take("WK_READY");
+  yield* call(ensureSceneControllerReady);
+  yield* call(ensureWkReady);
   yield* takeEvery(maybeFetchMeshFilesActionChannel, maybeFetchMeshFiles);
   yield* takeEvery(loadAdHocMeshActionChannel, loadAdHocMeshFromAction);
   yield* takeEvery(loadPrecomputedMeshActionChannel, loadPrecomputedMesh);
@@ -1296,5 +1343,6 @@ export default function* meshSaga(): Saga<void> {
   yield* takeEvery("UPDATE_MESH_VISIBILITY", handleMeshVisibilityChange);
   yield* takeEvery(["START_EDITING", "COPY_SEGMENTATION_LAYER"], markEditedCellAsDirty);
   yield* takeEvery("UPDATE_SEGMENT", handleSegmentColorChange);
+  yield* takeEvery("UPDATE_MESH_OPACITY", handleMeshOpacityChange);
   yield* takeEvery("BATCH_UPDATE_GROUPS_AND_SEGMENTS", handleBatchSegmentColorChange);
 }

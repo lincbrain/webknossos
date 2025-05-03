@@ -1,22 +1,22 @@
 import { presetPalettes } from "@ant-design/colors";
-import { LongUnitToShortUnitMap, UnitShort, type Vector3, type Vector6 } from "oxalis/constants";
-import { Unicode } from "oxalis/constants";
-import * as Utils from "libs/utils";
-import _ from "lodash";
 import dayjs from "dayjs";
-import duration from "dayjs/plugin/duration";
-import updateLocale from "dayjs/plugin/updateLocale";
-import relativeTime from "dayjs/plugin/relativeTime";
-import localizedFormat from "dayjs/plugin/localizedFormat";
-import customParseFormat from "dayjs/plugin/customParseFormat";
 import calendar from "dayjs/plugin/calendar";
+import customParseFormat from "dayjs/plugin/customParseFormat";
+import duration from "dayjs/plugin/duration";
+import localeData from "dayjs/plugin/localeData";
+import localizedFormat from "dayjs/plugin/localizedFormat";
+import relativeTime from "dayjs/plugin/relativeTime";
+import updateLocale from "dayjs/plugin/updateLocale";
 import utc from "dayjs/plugin/utc";
 import weekday from "dayjs/plugin/weekday";
-import localeData from "dayjs/plugin/localeData";
+import * as Utils from "libs/utils";
+import _ from "lodash";
+import { LongUnitToShortUnitMap, UnitShort, type Vector3, type Vector6 } from "oxalis/constants";
+import { Unicode } from "oxalis/constants";
 
-import type { BoundingBoxObject } from "oxalis/store";
 import type { Duration } from "dayjs/plugin/duration";
-import type { VoxelSize, WkLibsNdBoundingBox } from "types/api_flow_types";
+import type { BoundingBoxObject } from "oxalis/store";
+import type { VoxelSize, WkLibsNdBoundingBox } from "types/api_types";
 
 dayjs.extend(updateLocale);
 dayjs.extend(duration);
@@ -513,25 +513,28 @@ export function formatBytes(nbytes: number) {
 }
 
 export function formatVoxels(voxelCount: number) {
-  if (voxelCount == null || !Number.isFinite(voxelCount)) {
+  if (voxelCount == null) {
     return "";
   }
-  if (voxelCount > 2 ** 50) {
-    return `${(voxelCount / 2 ** 50).toPrecision(4)} PVx`;
+  if (!Number.isFinite(voxelCount)) {
+    return "Infinity";
   }
-  if (voxelCount > 2 ** 40) {
-    return `${(voxelCount / 2 ** 40).toPrecision(4)} TVx`;
+  if (voxelCount > 10 ** 15) {
+    return `${(voxelCount / 10 ** 15).toPrecision(4)} PVx`;
   }
-  if (voxelCount > 2 ** 30) {
-    return `${(voxelCount / 2 ** 30).toPrecision(4)} GVx`;
+  if (voxelCount > 10 ** 12) {
+    return `${(voxelCount / 10 ** 12).toPrecision(4)} TVx`;
   }
-  if (voxelCount > 2 ** 20) {
-    return `${(voxelCount / 2 ** 20).toPrecision(4)} MVx`;
+  if (voxelCount > 10 ** 9) {
+    return `${(voxelCount / 10 ** 9).toPrecision(4)} GVx`;
   }
-  if (voxelCount > 2 ** 10) {
-    return `${(voxelCount / 2 ** 10).toPrecision(4)} KVx`;
+  if (voxelCount > 10 ** 6) {
+    return `${(voxelCount / 10 ** 6).toPrecision(4)} MVx`;
   }
-  return `${voxelCount} B`;
+  if (voxelCount > 10 ** 3) {
+    return `${(voxelCount / 10 ** 3).toPrecision(4)} KVx`;
+  }
+  return `${voxelCount} Vx`;
 }
 
 export function formatNumber(num: number): string {
@@ -551,4 +554,14 @@ export function formatWkLibsNdBBox(ndBBox: WkLibsNdBoundingBox): string {
   return additionalAxisStrings.length > 0
     ? `${bboxString} (${additionalAxisStrings.join(", ")})`
     : bboxString;
+}
+
+export function formatCreditsString(credits: string): string {
+  return credits
+    .replace(/(\.\d*?[1-9])0+$/g, "$1") // Remove trailing zeros after decimal
+    .replace(/\.0*$/g, ""); // Remove the decimal point if no digits remain
+}
+
+export function formatCurrency(amount: number, currency: string): string {
+  return `${amount.toFixed(2)}${ThinSpace}${currency}`;
 }
