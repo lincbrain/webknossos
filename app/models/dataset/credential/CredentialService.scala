@@ -18,49 +18,78 @@ import scala.concurrent.ExecutionContext
 
 class CredentialService @Inject()(credentialDAO: CredentialDAO, conf: WkConf) {
 
-  def createCredentialOpt(uri: URI,
-                          credentialIdentifier: Option[String],
-                          credentialSecret: Option[String],
-                          userId: Option[ObjectId],
-                          organizationId: Option[String]): Option[DataVaultCredential] =
+  def createCredentialOpt(
+      uri: URI,
+      credentialIdentifier: Option[String],
+      credentialSecret: Option[String],
+      userId: Option[ObjectId],
+      organizationId: Option[String]
+  ): Option[DataVaultCredential] =
     uri.getScheme match {
       case DataVaultService.schemeHttps | DataVaultService.schemeHttp =>
-        credentialIdentifier.map(
-          username =>
-            HttpBasicAuthCredential(uri.toString,
-                                    username,
-                                    credentialSecret.getOrElse(""),
-                                    userId.map(_.toString),
-                                    organizationId))
+        credentialIdentifier.map(username =>
+          HttpBasicAuthCredential(
+            uri.toString,
+            username,
+            credentialSecret.getOrElse(""),
+            userId.map(_.toString),
+            organizationId
+          )
+        )
+
       case DataVaultService.schemeS3 =>
-        val s3PrivateBucketConfigKeyword = conf.get[String]("webKnossos.s3PrivateBucketConfig.keyword")
-        val isPrivateBucketEnabled = conf.get[Boolean]("webKnossos.s3PrivateBucketConfig.enabled")
-        if (uri.toString.contains(s3PrivateBucketConfigKeyword) && isPrivateBucketEnabled) {
-          val s3AccessIdKey = sys.env("AWS_ACCESS_KEY_ID")
+        val s3PrivateBucketConfigKeyword =
+          conf.get[String]("webKnossos.s3PrivateBucketConfig.keyword")
+        val isPrivateBucketEnabled =
+          conf.get[Boolean]("webKnossos.s3PrivateBucketConfig.enabled")
+
+        if (
+          uri.toString.contains(s3PrivateBucketConfigKeyword) && isPrivateBucketEnabled
+        ) {
+          val s3AccessIdKey     = sys.env("AWS_ACCESS_KEY_ID")
           val s3SecretAccessKey = sys.env("AWS_ACCESS_KEY")
           Some(
-            S3AccessKeyCredential(uri.toString,
-                                  s3AccessIdKey,
-                                  s3SecretAccessKey,
-                                  userId.map(_.toString),
-                                  organizationId))
+            S3AccessKeyCredential(
+              uri.toString,
+              s3AccessIdKey,
+              s3SecretAccessKey,
+              userId.map(_.toString),
+              organizationId
+            )
+          )
         } else {
           (credentialIdentifier, credentialSecret) match {
             case (Some(keyId), Some(secretKey)) =>
-              Some(S3AccessKeyCredential(uri.toString, keyId, secretKey, userId.map(_.toString), organizationId))
+              Some(
+                S3AccessKeyCredential(
+                  uri.toString,
+                  keyId,
+                  secretKey,
+                  userId.map(_.toString),
+                  organizationId
+                )
+              )
             case _ => None
           }
         }
+
       case DataVaultService.schemeGS =>
         for {
-          secret <- credentialSecret
-          secretJson <- JsonHelper.parseAs[JsValue](secret).toOption
-        } yield GoogleServiceAccountCredential(uri.toString, secretJson, userId.map(_.toString), organizationId)
-      case _ =>
-        None
+          secret      <- credentialSecret
+          secretJson  <- JsonHelper.parseAs[JsValue](secret).toOption
+        } yield GoogleServiceAccountCredential(
+          uri.toString,
+          secretJson,
+          userId.map(_.toString),
+          organizationId
+        )
+
+      case _ => None
     }
 
-  def insertOne(credential: DataVaultCredential)(implicit ec: ExecutionContext): Fox[ObjectId] = {
+  def insertOne(credential: DataVaultCredential)(implicit
+      ec: ExecutionContext
+  ): Fox[ObjectId] = {
     val _id = ObjectId.generate
     for {
       _ <- credential match {
@@ -71,5 +100,4 @@ class CredentialService @Inject()(credentialDAO: CredentialDAO, conf: WkConf) {
       }
     } yield _id
   }
-
 }
