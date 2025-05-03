@@ -10,12 +10,13 @@ import com.scalableminds.webknossos.datastore.storage.{
   S3AccessKeyCredential
 }
 import play.api.libs.json.JsValue
+import utils.WkConf
 
 import java.net.URI
 import javax.inject.Inject
 import scala.concurrent.ExecutionContext
 
-class CredentialService @Inject()(credentialDAO: CredentialDAO) {
+class CredentialService @Inject()(credentialDAO: CredentialDAO, conf: WkConf) {
 
   def createCredentialOpt(uri: URI,
                           credentialIdentifier: Option[String],
@@ -32,8 +33,8 @@ class CredentialService @Inject()(credentialDAO: CredentialDAO) {
                                     userId.map(_.toString),
                                     organizationId))
       case DataVaultService.schemeS3 =>
-        val s3PrivateBucketConfigKeyword = conf.WebKnossos.S3PrivateBucketConfig.keyword
-        val isPrivateBucketEnabled = conf.WebKnossos.S3PrivateBucketConfig.enabled
+        val s3PrivateBucketConfigKeyword = conf.get[String]("webKnossos.s3PrivateBucketConfig.keyword")
+        val isPrivateBucketEnabled = conf.get[Boolean]("webKnossos.s3PrivateBucketConfig.enabled")
         if (uri.toString.contains(s3PrivateBucketConfigKeyword) && isPrivateBucketEnabled) {
           val s3AccessIdKey = sys.env("AWS_ACCESS_KEY_ID")
           val s3SecretAccessKey = sys.env("AWS_ACCESS_KEY")
@@ -41,12 +42,12 @@ class CredentialService @Inject()(credentialDAO: CredentialDAO) {
             S3AccessKeyCredential(uri.toString,
                                   s3AccessIdKey,
                                   s3SecretAccessKey,
-                                  userId.toString,
-                                  organizationId.toString))
+                                  userId.map(_.toString),
+                                  organizationId))
         } else {
           (credentialIdentifier, credentialSecret) match {
             case (Some(keyId), Some(secretKey)) =>
-              Some(S3AccessKeyCredential(uri.toString, keyId, secretKey, userId.toString, organizationId.toString))
+              Some(S3AccessKeyCredential(uri.toString, keyId, secretKey, userId.map(_.toString), organizationId))
             case _ => None
           }
         }
