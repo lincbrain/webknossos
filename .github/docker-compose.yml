@@ -3,7 +3,7 @@ name: webknossos-ci
 
 services:
   webknossos:
-    image: scalableminds/webknossos:${DOCKER_TAG}
+    image: akanzer/webknossos:${DOCKER_TAG}
     pull_policy: never
     ports:
       - "9000:9000"
@@ -30,7 +30,7 @@ services:
         condition: service_healthy
 
   webknossos-datastore:
-    image: scalableminds/webknossos-datastore:${DOCKER_TAG}
+    image: akanzer/webknossos-datastore:${DOCKER_TAG}
     pull_policy: never
     ports:
       - "9090:9090"
