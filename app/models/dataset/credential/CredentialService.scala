@@ -9,15 +9,13 @@ import com.scalableminds.webknossos.datastore.storage.{
   HttpBasicAuthCredential,
   S3AccessKeyCredential
 }
-import net.liftweb.common.Box.tryo
-import play.api.libs.json.Json
-import utils.{ObjectId, WkConf}
+import play.api.libs.json.JsValue
 
 import java.net.URI
 import javax.inject.Inject
 import scala.concurrent.ExecutionContext
 
-class CredentialService @Inject()(credentialDAO: CredentialDAO, conf: WkConf) {
+class CredentialService @Inject()(credentialDAO: CredentialDAO) {
 
   def createCredentialOpt(uri: URI,
                           credentialIdentifier: Option[String],
