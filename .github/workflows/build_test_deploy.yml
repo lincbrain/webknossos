@@ -202,8 +202,8 @@ jobs:
           context: .
           push: false
           tags: |
-            scalableminds/webknossos:${{ env.NORMALIZED_BRANCH }}
-            scalableminds/webknossos:${{ env.DOCKER_TAG }}
+            akanzer/webknossos:${{ env.NORMALIZED_BRANCH }}
+            akanzer/webknossos:${{ env.DOCKER_TAG }}
           outputs: |
             type=image
       - name: Build webknossos-datastore docker image
@@ -213,8 +213,8 @@ jobs:
           context: webknossos-datastore
           push: false
           tags: |
-            scalableminds/webknossos-datastore:${{ env.NORMALIZED_BRANCH }}
-            scalableminds/webknossos-datastore:${{ env.DOCKER_TAG }}
+            akanzer/webknossos-datastore:${{ env.NORMALIZED_BRANCH }}
+            akanzer/webknossos-datastore:${{ env.DOCKER_TAG }}
           outputs: |
             type=image
       - name: Build webknossos-tracingstore docker image
@@ -224,8 +224,8 @@ jobs:
           context: webknossos-tracingstore
           push: false
           tags: |
-            scalableminds/webknossos-tracingstore:${{ env.NORMALIZED_BRANCH }}
-            scalableminds/webknossos-tracingstore:${{ env.DOCKER_TAG }}
+            akanzer/webknossos-tracingstore:${{ env.NORMALIZED_BRANCH }}
+            akanzer/webknossos-tracingstore:${{ env.DOCKER_TAG }}
           outputs: |
             type=image
 
@@ -266,39 +266,39 @@ jobs:
         if: ${{ ! startsWith(github.ref, 'refs/tags/') }}
         uses: ./.github/actions/retry
         with:
-          run: docker push "scalableminds/webknossos:${{ env.DOCKER_TAG }}"
+          run: docker push "akanzer/webknossos:${{ env.DOCKER_TAG }}"
           retries: 5
           retry_delay_seconds: 10
       - name: Push normalized webknossos image
         uses: ./.github/actions/retry
         with:
-          run: docker push "scalableminds/webknossos:${{ env.NORMALIZED_BRANCH }}"
+          run: docker push "akanzer/webknossos:${{ env.NORMALIZED_BRANCH }}"
           retries: 5
           retry_delay_seconds: 10
       - name: Push webknossos-datastore image
         if: ${{ ! startsWith(github.ref, 'refs/tags/') }}
         uses: ./.github/actions/retry
         with:
-          run: docker push "scalableminds/webknossos-datastore:${{ env.DOCKER_TAG }}"
+          run: docker push "akanzer/webknossos-datastore:${{ env.DOCKER_TAG }}"
           retries: 5
           retry_delay_seconds: 10
       - name: Push normalized webknossos-datastore image
         uses: ./.github/actions/retry
         with:
-          run: docker push "scalableminds/webknossos-datastore:${{ env.NORMALIZED_BRANCH }}"
+          run: docker push "akanzer/webknossos-datastore:${{ env.NORMALIZED_BRANCH }}"
           retries: 5
           retry_delay_seconds: 10
       - name: Push webknossos-tracingstore image
         if: ${{ ! startsWith(github.ref, 'refs/tags/') }}
         uses: ./.github/actions/retry
         with:
-          run: docker push "scalableminds/webknossos-tracingstore:${{ env.DOCKER_TAG }}"
+          run: docker push "akanzer/webknossos-tracingstore:${{ env.DOCKER_TAG }}"
           retries: 5
           retry_delay_seconds: 10
       - name: Push normalized webknossos-tracingstore image
         uses: ./.github/actions/retry
         with:
-          run: docker push "scalableminds/webknossos-tracingstore:${{ env.NORMALIZED_BRANCH }}"
+          run: docker push "akanzer/webknossos-tracingstore:${{ env.NORMALIZED_BRANCH }}"
           retries: 5
           retry_delay_seconds: 10
       - name: Slack Notification

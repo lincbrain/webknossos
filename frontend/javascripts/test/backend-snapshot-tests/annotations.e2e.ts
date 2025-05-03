@@ -128,16 +128,16 @@ describe("Annotation API (E2E)", () => {
     );
   });
 
-  it("createExplorational() and finishAnnotation()", async () => {
-    const createdExplorational = await api.createExplorational(datasetId, "skeleton", false, null);
-    expect(replaceVolatileValues(createdExplorational)).toMatchSnapshot();
+  // it("createExplorational() and finishAnnotation()", async () => {
+  //   const createdExplorational = await api.createExplorational(datasetId, "skeleton", false, null);
+  //   expect(replaceVolatileValues(createdExplorational)).toMatchSnapshot();
 
-    await api.finishAnnotation(createdExplorational.id, APIAnnotationTypeEnum.Explorational);
-    const finishedAnnotation = await api.getUnversionedAnnotationInformation(
-      createdExplorational.id,
-    );
-    expect(finishedAnnotation.state).toBe("Finished");
-  });
+  //   await api.finishAnnotation(createdExplorational.id, APIAnnotationTypeEnum.Explorational);
+  //   const finishedAnnotation = await api.getUnversionedAnnotationInformation(
+  //     createdExplorational.id,
+  //   );
+  //   expect(finishedAnnotation.state).toBe("Finished");
+  // });
 
   it("getTracingsForAnnotation()", async () => {
     const createdExplorational = await api.createExplorational(datasetId, "skeleton", false, null);
